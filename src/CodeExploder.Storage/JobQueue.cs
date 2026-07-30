@@ -232,7 +232,7 @@ public sealed class JobQueue(NpgsqlDataSource dataSource)
         return await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    /// <summary>Queue depth for the status bar: (queued, running) counts.</summary>
+    /// <summary>Queue depth for the status bar: (queued, running) counts. Fed to /api/system/status.</summary>
     public async Task<(long Queued, long Running)> DepthAsync(CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand(
@@ -246,3 +246,5 @@ public sealed class JobQueue(NpgsqlDataSource dataSource)
         return (reader.GetInt64(0), reader.GetInt64(1));
     }
 }
+
+// PR-fixture note: the counting-join guard below is exercised by JobQueueTests.

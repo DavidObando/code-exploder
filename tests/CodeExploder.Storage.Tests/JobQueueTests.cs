@@ -158,3 +158,5 @@ public sealed class JobQueueTests(PostgresFixture fixture) : IClassFixture<Postg
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+// PR-fixture note: see the queue's terminal-transition guards.
