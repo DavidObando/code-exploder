@@ -17,6 +17,8 @@ function entry(overrides: Partial<SectionTocEntry>): SectionTocEntry {
     estimatedMinutes: 5,
     status: 'ready',
     myState: 'unread',
+    hasQuiz: false,
+    quizBestPct: null,
     ...overrides,
   };
 }

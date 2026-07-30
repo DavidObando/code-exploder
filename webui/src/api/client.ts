@@ -5,6 +5,9 @@ import type {
   ExperienceToc,
   Health,
   Me,
+  Quiz,
+  QuizAttempt,
+  QuizAttemptRequest,
   SectionDetail,
   SectionProgressResponse,
   SectionUserState,
@@ -66,4 +69,13 @@ export const api = {
       `/api/sections/${encodeURIComponent(sectionId)}/progress`,
       { method: 'PUT', body: JSON.stringify({ state }) },
     ),
+  getQuiz: (quizId: string) => request<Quiz>(`/api/quizzes/${encodeURIComponent(quizId)}`),
+  /** Newest first. */
+  listQuizAttempts: (quizId: string) =>
+    request<QuizAttempt[]>(`/api/quizzes/${encodeURIComponent(quizId)}/attempts`),
+  submitQuizAttempt: (quizId: string, body: QuizAttemptRequest) =>
+    request<QuizAttempt>(`/api/quizzes/${encodeURIComponent(quizId)}/attempts`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };

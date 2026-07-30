@@ -127,6 +127,7 @@ app.MapHub<CodeExploder.Gateway.Hubs.SessionHub>("/hubs/session").RequireAuthori
 
 SessionEndpoints.Map(app);
 ExperienceEndpoints.Map(app);
+QuizEndpoints.Map(app);
 SystemEndpoints.Map(app);
 
 // Unknown API routes must 404 rather than fall through to the SPA's index.html.

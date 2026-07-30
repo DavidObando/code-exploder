@@ -16,6 +16,8 @@ function entry(overrides: Partial<SectionTocEntry>): SectionTocEntry {
     estimatedMinutes: 5,
     status: 'ready',
     myState: 'unread',
+    hasQuiz: false,
+    quizBestPct: null,
     ...overrides,
   };
 }
@@ -27,7 +29,15 @@ const toc: ExperienceToc = {
   model: 'llama',
   generatedAt: '2026-07-30T00:00:00Z',
   sections: [
-    entry({ id: 's1', slug: 'intro', title: 'Intro', ord: 0, myState: 'completed' }),
+    entry({
+      id: 's1',
+      slug: 'intro',
+      title: 'Intro',
+      ord: 0,
+      myState: 'completed',
+      hasQuiz: true,
+      quizBestPct: 80,
+    }),
     entry({ id: 's2', slug: 'arch', title: 'Architecture', ord: 1, myState: 'read' }),
     entry({ id: 's3', slug: 'data', title: 'Data flow', ord: 2, myState: 'unread' }),
     entry({ id: 's4', slug: 'scen', title: 'Scenarios', ord: 3, myState: 'skipped' }),
@@ -96,5 +106,14 @@ describe('SectionNav', () => {
     // 1 of 6 completed; 5 min left from the single ready+unread section.
     expect(screen.getByText(/1\/6 completed/)).toBeInTheDocument();
     expect(screen.getByText(/~5 min left/)).toBeInTheDocument();
+  });
+
+  it('shows a quiz indicator and best-score tooltip on quiz sections', () => {
+    renderNav();
+    expect(screen.getByLabelText('Has a quiz')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Intro/ })).toHaveAttribute(
+      'title',
+      'Best quiz score: 80%',
+    );
   });
 });

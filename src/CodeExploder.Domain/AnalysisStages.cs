@@ -45,6 +45,11 @@ public static class LlmJobTypes
     public const string Synthesize = "synthesize";
     public const string TutorialSection = "tutorial-section";
     public const string FinalizeExperience = "finalize-experience";
+    public const string QuizGenerate = "quiz-generate";
+    public const string GradeQuiz = "grade-quiz";
+
+    /// <summary>Interactive lane priority (docs/02): grading answers is latency-sensitive.</summary>
+    public const int InteractivePriority = 100;
 }
 
 /// <summary>
@@ -59,4 +64,6 @@ public static class SessionEventKinds
     public const string SectionReady = "SectionReady";
     public const string AnalysisCompleted = "AnalysisCompleted";
     public const string AnalysisFailed = "AnalysisFailed";
+    public const string QuizReady = "QuizReady";
+    public const string QuizGraded = "QuizGraded";
 }

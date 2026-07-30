@@ -46,12 +46,34 @@ public sealed record SectionTocEntry(
     Guid? ParentSectionId,
     int EstimatedMinutes,
     string Status,
-    string MyState);
+    string MyState,
+    bool HasQuiz,
+    int? QuizBestPct);
 
 public sealed record BlockDto(Guid Id, int Ord, string Type, System.Text.Json.JsonElement Data);
 
 public sealed record SectionDetail(
-    Guid Id, string Slug, string Title, string Kind, string Status, IReadOnlyList<BlockDto> Blocks);
+    Guid Id, string Slug, string Title, string Kind, string Status, Guid? QuizId,
+    IReadOnlyList<BlockDto> Blocks);
+
+public sealed record QuizChoiceDto(string Key, string Text);
+
+/// <summary>Client-facing question: answer keys and rubrics are stripped server-side.</summary>
+public sealed record QuizQuestionDto(
+    Guid Id, int Ord, string Type, string Prompt,
+    IReadOnlyList<QuizChoiceDto>? Choices, int? MaxWords);
+
+public sealed record QuizDto(Guid Id, Guid SectionId, string Title, IReadOnlyList<QuizQuestionDto> Questions);
+
+public sealed record QuizAnswerDto(Guid QuestionId, List<string>? ChoiceKeys, string? Text);
+
+public sealed record QuizAttemptRequest(List<QuizAnswerDto> Answers);
+
+public sealed record PerQuestionResult(Guid QuestionId, bool? Correct, bool Excluded, string? FeedbackMd);
+
+public sealed record QuizAttemptDto(
+    Guid Id, DateTimeOffset SubmittedAt, string Status, int? ScorePct,
+    IReadOnlyList<PerQuestionResult> PerQuestion);
 
 public sealed record ProgressUpdateRequest(string State);
 

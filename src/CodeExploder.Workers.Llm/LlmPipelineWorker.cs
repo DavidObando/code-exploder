@@ -18,6 +18,7 @@ public sealed class LlmPipelineWorker(
     SessionStore sessions,
     AnalysisStore analyses,
     ExperienceStore experiences,
+    QuizStore quizzes,
     ISessionEventBus bus,
     ILlmClient llm,
     LlmReadinessGate gate,
@@ -27,7 +28,10 @@ public sealed class LlmPipelineWorker(
     ILogger<LlmPipelineWorker> logger) : BackgroundService
 {
     private static readonly string[] JobTypes =
-        [LlmJobTypes.SummarizeComponent, LlmJobTypes.Synthesize, LlmJobTypes.TutorialSection, LlmJobTypes.FinalizeExperience];
+    [
+        LlmJobTypes.SummarizeComponent, LlmJobTypes.Synthesize, LlmJobTypes.TutorialSection,
+        LlmJobTypes.FinalizeExperience, LlmJobTypes.QuizGenerate, LlmJobTypes.GradeQuiz,
+    ];
 
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan NotReadyDelay = TimeSpan.FromSeconds(15);
@@ -102,6 +106,12 @@ public sealed class LlmPipelineWorker(
                 break;
             case LlmJobTypes.FinalizeExperience:
                 await RunFinalizeAsync(p, ct);
+                break;
+            case LlmJobTypes.QuizGenerate:
+                await RunQuizGenerateAsync(p, ct);
+                break;
+            case LlmJobTypes.GradeQuiz:
+                await RunGradeQuizAsync(p, ct);
                 break;
             default:
                 throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
@@ -252,6 +262,72 @@ public sealed class LlmPipelineWorker(
         bus.Publish(p.SessionId, SessionEventKinds.SectionReady,
             new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal });
         Progress(p, AnalysisStages.Sections, total == 0 ? 100 : ready * 100.0 / total, $"{ready}/{total} sections");
+
+        // S7 rides behind the section, non-blocking: quizzes are enhancement, never a
+        // gate on tutorial readiness (docs/05 §Quizzes).
+        await queue.EnqueueAsync(
+            LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts),
+            analysisId: p.AnalysisId, ct: ct);
+    }
+
+    private async Task RunQuizGenerateAsync(Payload p, CancellationToken ct)
+    {
+        if (await experiences.GetSectionTextAsync(p.SectionId!.Value, ct) is not { } section
+            || string.IsNullOrWhiteSpace(section.Markdown))
+        {
+            logger.LogInformation("Section {SectionId} has no text; skipping quiz", p.SectionId);
+            return;
+        }
+
+        var generator = new QuizGenerator(llm, LoggerFor<QuizGenerator>());
+        var result = await generator.GenerateAsync(section.Title, section.Markdown, ct);
+        var quizId = await quizzes.CreateQuizAsync(p.SectionId.Value, result.Title, result.Questions, ct);
+        bus.Publish(p.SessionId, SessionEventKinds.QuizReady, new { sectionId = p.SectionId, quizId });
+        Narrate(p, $"Quiz ready for “{section.Title}” ({result.Questions.Count} questions)");
+    }
+
+    private async Task RunGradeQuizAsync(Payload p, CancellationToken ct)
+    {
+        var attempt = await quizzes.GetAttemptAsync(p.AttemptId!.Value, ct)
+            ?? throw new InvalidOperationException($"attempt not found: {p.AttemptId}");
+        if (attempt.Status == "graded")
+        {
+            return; // idempotent retry
+        }
+
+        var quiz = await quizzes.GetForUserAsync(attempt.QuizId, attempt.UserId, ct)
+            ?? throw new InvalidOperationException($"quiz not found: {attempt.QuizId}");
+
+        var answers = JsonSerializer.Deserialize<List<QuizAnswer>>(attempt.AnswersJson, JsonOpts) ?? [];
+        var questions = quiz.Questions.Select(q => (q.Id, q.Type, q.DataJson)).ToList();
+        var results = QuizGrading.GradeDeterministic(questions, answers);
+
+        for (var i = 0; i < results.Count; i++)
+        {
+            if (!results[i].NeedsLlm)
+            {
+                continue;
+            }
+
+            var question = quiz.Questions.First(q => q.Id == results[i].QuestionId);
+            var data = QuizGrading.ParseData(question.DataJson);
+            var answerText = answers.First(a => a.QuestionId == question.Id).Text!;
+            var grader = new AnswerGrader(llm, LoggerFor<AnswerGrader>());
+            var coverage = await grader.GradeAsync(question.Prompt, data.Rubric!, answerText, ct);
+            results[i] = QuizGrading.ResolveShort(question.Id, data, coverage);
+        }
+
+        var score = QuizGrading.ComputeScore(results) ?? 0;
+        await quizzes.CompleteGradingAsync(
+            p.AttemptId.Value, score, JsonSerializer.Serialize(results, JsonOpts), ct);
+        await quizzes.RecordScoreAsync(
+            attempt.QuizId, attempt.UserId, score, QuizGrading.CompleteThresholdPct, ct);
+
+        if (await quizzes.GetSessionForQuizAsync(attempt.QuizId, ct) is { } route)
+        {
+            bus.Publish(route.SessionId, SessionEventKinds.QuizGraded,
+                new { attemptId = p.AttemptId, quizId = attempt.QuizId, scorePct = score, sectionId = route.SectionId });
+        }
     }
 
     private async Task RunFinalizeAsync(Payload p, CancellationToken ct)
@@ -345,7 +421,8 @@ public sealed class LlmPipelineWorker(
         string? ScenarioId = null,
         int? Ordinal = null,
         string? Slug = null,
-        string? Title = null);
+        string? Title = null,
+        Guid? AttemptId = null);
 
     private static string Slugify(string input) =>
         new(input.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());

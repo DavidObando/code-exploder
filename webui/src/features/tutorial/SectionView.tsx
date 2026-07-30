@@ -3,6 +3,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { usePageTitle } from '../../lib/usePageTitle';
+import { QuizCard } from '../quiz/QuizCard';
 import { BlockRenderer } from './blocks/BlockRenderer';
 import { useSectionProgress } from './useSectionProgress';
 import { useTutorialContext } from './TutorialLayout';
@@ -40,6 +41,8 @@ export function SectionView() {
     queryFn: () => api.getSection(entry!.id),
     enabled: entry !== null && ready,
   });
+
+  const articleRef = useRef<HTMLElement>(null);
 
   // Scroll-to-end auto-marks `read` — an upgrade from unread only, never a
   // downgrade of read/skipped/completed.
@@ -100,7 +103,7 @@ export function SectionView() {
   const isLast = entry.ord === maxOrd;
 
   return (
-    <article>
+    <article ref={articleRef}>
       <h1 className={styles.sectionTitle}>{entry.title}</h1>
       <p className={styles.sectionKind}>{entry.kind}</p>
       <div className={styles.blocks}>
@@ -113,6 +116,12 @@ export function SectionView() {
           />
         ))}
       </div>
+      {section.data.quizId && (
+        <QuizCard
+          quizId={section.data.quizId}
+          onReread={() => articleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        />
+      )}
       {isLast && (
         <div className={styles.endCard}>
           <p className={styles.endCardTitle}>You've reached the end</p>

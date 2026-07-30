@@ -100,6 +100,9 @@ export interface SectionTocEntry {
   estimatedMinutes: number;
   status: SectionStatus;
   myState: SectionUserState;
+  hasQuiz: boolean;
+  /** Best score across retakes; null when never attempted. */
+  quizBestPct: number | null;
 }
 
 export interface ExperienceToc {
@@ -158,10 +161,59 @@ export interface SectionDetail {
   kind: SectionKind;
   status: SectionStatus;
   blocks: Block[];
+  /** Null until the quiz generates — quizzes arrive after their section. */
+  quizId: string | null;
 }
 
 export interface SectionProgressResponse {
   sectionId: string;
   state: SectionUserState;
   sessionProgress: { completedSections: number; totalSections: number };
+}
+
+// --- Quizzes (M3) --- answer keys and rubrics never reach the client.
+
+interface QuizQuestionBase {
+  id: string;
+  ord: number;
+  prompt: string;
+}
+
+export type QuizQuestion =
+  | (QuizQuestionBase & { type: 'single' | 'multi'; choices: { key: string; text: string }[] })
+  | (QuizQuestionBase & { type: 'boolean' })
+  | (QuizQuestionBase & { type: 'short'; maxWords: number });
+
+export interface Quiz {
+  id: string;
+  sectionId: string;
+  title: string;
+  questions: QuizQuestion[];
+}
+
+export interface QuizAnswer {
+  questionId: string;
+  choiceKeys?: string[];
+  text?: string;
+}
+
+export interface QuizAttemptRequest {
+  answers: QuizAnswer[];
+}
+
+export interface QuizAttempt {
+  id: string;
+  submittedAt: string;
+  /** 'grading' only while a short answer awaits the LLM. */
+  status: 'grading' | 'graded';
+  /** Null while grading. */
+  scorePct: number | null;
+  perQuestion: {
+    questionId: string;
+    /** Null = short answer pending or excluded. */
+    correct: boolean | null;
+    /** Short answer was ungradable — not counted toward the score. */
+    excluded: boolean;
+    feedbackMd: string | null;
+  }[];
 }

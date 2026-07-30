@@ -2,7 +2,13 @@ import * as signalR from '@microsoft/signalr';
 import type { QueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { useUi } from '../store/ui';
-import type { AnalysisFailedData, SectionReadyData, SessionEventEnvelope } from '../api/events';
+import type {
+  AnalysisFailedData,
+  QuizGradedData,
+  QuizReadyData,
+  SectionReadyData,
+  SessionEventEnvelope,
+} from '../api/events';
 
 // One SessionHub connection per app instance. The user's own sessions' lifecycle
 // events arrive automatically (user group); pages additionally subscribe per session.
@@ -198,6 +204,21 @@ class LiveEvents {
         const data = evt.data as AnalysisFailedData;
         useUi.getState().toast('error', 'Analysis failed', data.reason);
         qc?.invalidateQueries({ queryKey: ['analysis', evt.sessionId] });
+        qc?.invalidateQueries({ queryKey: ['sessions'] });
+        break;
+      }
+      case 'QuizReady': {
+        // The quiz chip/card appears on its section; hasQuiz flips in the TOC.
+        const data = evt.data as QuizReadyData;
+        qc?.invalidateQueries({ queryKey: ['section', data.sectionId] });
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
+        break;
+      }
+      case 'QuizGraded': {
+        // Server auto-completes the section at >=75%: myState and progress move.
+        const data = evt.data as QuizGradedData;
+        qc?.invalidateQueries({ queryKey: ['attempts', data.quizId] });
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
         qc?.invalidateQueries({ queryKey: ['sessions'] });
         break;
       }

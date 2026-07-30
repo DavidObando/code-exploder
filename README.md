@@ -27,8 +27,11 @@ architecture synthesis, then sections publish progressively: an intro, an
 architecture tour and product-scenario walkthroughs with **progressively revealed
 whiteboard diagrams** (the LLM emits validated JSON specs; Mermaid is rendered
 deterministically), verified file/line code citations, and a build/test/release
-section — consumed self-paced with per-section progress tracking. Quizzes arrive in
-M3, the Q&A expert in M4. Milestones M0–M8 are described in
+section — consumed self-paced with per-section progress tracking. **M3 adds quizzes**:
+per-section comprehension checks (mostly auto-graded; one optional short answer graded
+by the LLM as binary key-point coverage, with ungradable answers excluded rather than
+marked wrong), unlimited retakes with best-score tracking, and automatic section
+completion at ≥75 %. The Q&A expert arrives in M4. Milestones M0–M8 are described in
 [docs/08](docs/08-milestones-and-risks.md).
 
 The LLM defaults to `qwen3-coder:oc` via an OpenAI-compatible endpoint

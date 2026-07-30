@@ -7,10 +7,16 @@ import { create } from 'zustand';
 interface TutorialState {
   stageByBlock: Record<string, number>;
   setStage: (blockId: string, stage: number) => void;
+  /** Quizzes the learner dismissed with "Skip quiz" — UI-only, this session. */
+  skippedQuizzes: Record<string, boolean>;
+  setQuizSkipped: (quizId: string, skipped: boolean) => void;
 }
 
 export const useTutorial = create<TutorialState>((set) => ({
   stageByBlock: {},
   setStage: (blockId, stage) =>
     set((s) => ({ stageByBlock: { ...s.stageByBlock, [blockId]: stage } })),
+  skippedQuizzes: {},
+  setQuizSkipped: (quizId, skipped) =>
+    set((s) => ({ skippedQuizzes: { ...s.skippedQuizzes, [quizId]: skipped } })),
 }));

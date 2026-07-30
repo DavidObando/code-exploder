@@ -1,0 +1,244 @@
+.card {
+  margin-top: var(--space-8);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.title {
+  font: var(--type-heading);
+  margin: 0;
+}
+
+.optional {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.skipLink {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: var(--type-caption);
+}
+
+.skipLink:hover {
+  color: var(--text-secondary);
+}
+
+.skippedRow {
+  margin-top: var(--space-8);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: var(--type-caption);
+  color: var(--text-muted);
+}
+
+/* --- Questions --- */
+.question {
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-bar);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.questionCorrect {
+  composes: question;
+  border-left-color: var(--keep);
+}
+
+.questionIncorrect {
+  composes: question;
+  border-left-color: var(--error);
+}
+
+.questionPending {
+  composes: question;
+  border-left-color: var(--suggestion);
+}
+
+.prompt {
+  font: var(--type-body-strong);
+  margin: 0;
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.resultGlyph {
+  flex: none;
+  font: var(--type-body-strong);
+}
+
+.hint {
+  font: var(--type-micro);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.choice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: var(--type-body);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.choice:hover {
+  background: var(--bg-2);
+  color: var(--text-primary);
+}
+
+.choice input {
+  accent-color: var(--accent);
+}
+
+.choiceSelected {
+  composes: choice;
+  color: var(--text-primary);
+  background: var(--bg-2);
+}
+
+.shortInput {
+  font: var(--type-body);
+  color: var(--text-primary);
+  background: var(--bg-0);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  min-height: 72px;
+  resize: vertical;
+}
+
+.shortInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wordCount {
+  font: var(--type-micro);
+  color: var(--text-muted);
+  align-self: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.wordCountOver {
+  composes: wordCount;
+  color: var(--suggestion);
+}
+
+.answerEcho {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.feedback {
+  background: var(--bg-2);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.feedback p {
+  margin: 0;
+}
+
+.pendingNote {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  animation: quizPulse 1.4s var(--ease) infinite;
+}
+
+@keyframes quizPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pendingNote {
+    animation: none;
+  }
+}
+
+.excludedNote {
+  font: var(--type-caption);
+  color: var(--text-muted);
+}
+
+/* --- Footer --- */
+.footer {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.score {
+  font: var(--type-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.completedNote {
+  color: var(--keep);
+  font: var(--type-body-strong);
+}
+
+.rereadLink {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: var(--type-caption);
+  padding: 0;
+}
+
+.footerRight {
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.actions {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}

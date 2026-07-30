@@ -5,7 +5,8 @@ namespace CodeExploder.Storage;
 
 public sealed record SectionRow(
     Guid Id, string Slug, string Kind, string Title, string Summary,
-    int Ord, int Depth, Guid? ParentSectionId, int EstimatedMinutes, string Status, string MyState);
+    int Ord, int Depth, Guid? ParentSectionId, int EstimatedMinutes, string Status, string MyState,
+    bool HasQuiz, int? QuizBestPct);
 
 public sealed record ExperienceRow(
     Guid Id, int Version, string CommitSha, string Model, DateTimeOffset GeneratedAt);
@@ -13,7 +14,8 @@ public sealed record ExperienceRow(
 public sealed record BlockRow(Guid Id, int Ord, string Type, string DataJson);
 
 public sealed record SectionDetailRow(
-    Guid Id, string Slug, string Title, string Kind, string Status, IReadOnlyList<BlockRow> Blocks);
+    Guid Id, string Slug, string Title, string Kind, string Status, Guid? QuizId,
+    IReadOnlyList<BlockRow> Blocks);
 
 /// <summary>Raw-SQL store for the experience side: experiences → sections → blocks + per-user progress.</summary>
 public sealed class ExperienceStore(NpgsqlDataSource dataSource)
@@ -134,7 +136,9 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
             """
             select sec.id, sec.slug, sec.kind, sec.title, sec.summary, sec.ord, sec.depth,
                    sec.parent_section_id, sec.estimated_minutes, sec.status,
-                   coalesce(sp.state, 'unread')
+                   coalesce(sp.state, 'unread'),
+                   exists(select 1 from quizzes q where q.section_id = sec.id),
+                   sp.quiz_best_pct
             from sections sec
             left join section_progress sp on sp.section_id = sec.id and sp.user_id = $2
             where sec.experience_id = $1
@@ -150,7 +154,9 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
                 reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 reader.GetString(4), reader.GetInt32(5), reader.GetInt32(6),
                 reader.IsDBNull(7) ? null : reader.GetGuid(7),
-                reader.GetInt32(8), reader.GetString(9), reader.GetString(10)));
+                reader.GetInt32(8), reader.GetString(9), reader.GetString(10),
+                reader.GetBoolean(11),
+                reader.IsDBNull(12) ? null : reader.GetInt32(12)));
         }
 
         return rows;
@@ -164,10 +170,11 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         SectionDetailRow? detail = null;
         await using (var cmd = new NpgsqlCommand(
             """
-            select sec.id, sec.slug, sec.title, sec.kind, sec.status
+            select sec.id, sec.slug, sec.title, sec.kind, sec.status, q.id
             from sections sec
             join experiences e on e.id = sec.experience_id
             join sessions s on s.id = e.session_id
+            left join quizzes q on q.section_id = sec.id
             where sec.id = $1 and s.user_id = $2
             """, conn))
         {
@@ -178,7 +185,8 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
             {
                 detail = new SectionDetailRow(
                     reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
-                    reader.GetString(3), reader.GetString(4), []);
+                    reader.GetString(3), reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetGuid(5), []);
             }
         }
 
@@ -254,6 +262,44 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         await using var reader = await counts.ExecuteReaderAsync(ct);
         await reader.ReadAsync(ct);
         return ((int)reader.GetInt64(0), (int)reader.GetInt64(1));
+    }
+
+    /// <summary>Section title + concatenated markdown/callout text — the quiz generator's input.</summary>
+    public async Task<(string Title, string Markdown)?> GetSectionTextAsync(Guid sectionId, CancellationToken ct = default)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        string? title = null;
+        await using (var cmd = new NpgsqlCommand("select title from sections where id = $1", conn))
+        {
+            cmd.Parameters.AddWithValue(sectionId);
+            title = await cmd.ExecuteScalarAsync(ct) as string;
+        }
+
+        if (title is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        await using (var cmd = new NpgsqlCommand(
+            """
+            select type, data->>'md' from blocks
+            where section_id = $1 and type in ('markdown','callout')
+            order by ord
+            """, conn))
+        {
+            cmd.Parameters.AddWithValue(sectionId);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (!reader.IsDBNull(1))
+                {
+                    parts.Add(reader.GetString(1));
+                }
+            }
+        }
+
+        return (title, string.Join("\n\n", parts));
     }
 
     public async Task<int> CountUnreadySectionsAsync(Guid experienceId, CancellationToken ct = default)

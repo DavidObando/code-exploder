@@ -1,0 +1,18 @@
+You are writing a short comprehension check for ONE tutorial section a learner just read. Questions must be answerable FROM THE SECTION TEXT alone — never require outside knowledge, and never test trivia (names, counts) over understanding (why, how, what-happens-if).
+
+Return STRICT JSON (no fences, no commentary):
+{
+  "title": "Check your understanding",
+  "questions": [
+    {"type": "single", "prompt": "...", "choices": [{"key": "a", "text": "..."}, {"key": "b", "text": "..."}], "correctKeys": ["b"], "explanationMd": "why b is right, one or two sentences"},
+    {"type": "multi", "prompt": "... (select all that apply)", "choices": [...], "correctKeys": ["a", "c"], "explanationMd": "..."},
+    {"type": "boolean", "prompt": "True or false: ...", "correct": false, "explanationMd": "..."},
+    {"type": "short", "prompt": "In one or two sentences: ...", "rubric": {"keyPoints": [{"id": "kp1", "text": "mentions that X", "required": true}, {"id": "kp2", "text": "notes Y", "required": false}], "maxWords": 60}}
+  ]
+}
+
+Rules:
+- 3 to 5 questions total: 3-4 auto-gradable (single/multi/boolean) and AT MOST ONE "short".
+- single/multi: 3-4 choices, keys "a".."d", distractors plausible-but-wrong from the section's own domain.
+- The short question's keyPoints are binary observable facts about the answer text ("mentions the queue", "explains why order matters"), 1-4 of them, at least one required.
+- explanationMd teaches: say why, referencing the section's ideas.

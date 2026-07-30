@@ -273,6 +273,126 @@
         }
       }
     },
+    "/api/quizzes/{quizId}": {
+      "get": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "quizId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/quizzes/{quizId}/attempts": {
+      "post": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "quizId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuizAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizAttemptDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "quizId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QuizAttemptDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "tags": [
@@ -603,6 +723,36 @@
           }
         }
       },
+      "PerQuestionResult": {
+        "required": [
+          "questionId",
+          "correct",
+          "excluded",
+          "feedbackMd"
+        ],
+        "type": "object",
+        "properties": {
+          "questionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "correct": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "excluded": {
+            "type": "boolean"
+          },
+          "feedbackMd": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ProgressUpdateRequest": {
         "required": [
           "state"
@@ -648,6 +798,171 @@
           "activeJobs": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "QuizAnswerDto": {
+        "required": [
+          "questionId",
+          "choiceKeys",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "questionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "choiceKeys": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "QuizAttemptDto": {
+        "required": [
+          "id",
+          "submittedAt",
+          "status",
+          "scorePct",
+          "perQuestion"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "scorePct": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "perQuestion": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PerQuestionResult"
+            }
+          }
+        }
+      },
+      "QuizAttemptRequest": {
+        "required": [
+          "answers"
+        ],
+        "type": "object",
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuizAnswerDto"
+            }
+          }
+        }
+      },
+      "QuizChoiceDto": {
+        "required": [
+          "key",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "QuizDto": {
+        "required": [
+          "id",
+          "sectionId",
+          "title",
+          "questions"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuizQuestionDto"
+            }
+          }
+        }
+      },
+      "QuizQuestionDto": {
+        "required": [
+          "id",
+          "ord",
+          "type",
+          "prompt",
+          "choices",
+          "maxWords"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ord": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "choices": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/QuizChoiceDto"
+            }
+          },
+          "maxWords": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -753,6 +1068,7 @@
           "title",
           "kind",
           "status",
+          "quizId",
           "blocks"
         ],
         "type": "object",
@@ -772,6 +1088,13 @@
           },
           "status": {
             "type": "string"
+          },
+          "quizId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           },
           "blocks": {
             "type": "array",
@@ -793,7 +1116,9 @@
           "parentSectionId",
           "estimatedMinutes",
           "status",
-          "myState"
+          "myState",
+          "hasQuiz",
+          "quizBestPct"
         ],
         "type": "object",
         "properties": {
@@ -837,6 +1162,16 @@
           },
           "myState": {
             "type": "string"
+          },
+          "hasQuiz": {
+            "type": "boolean"
+          },
+          "quizBestPct": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },

@@ -36,6 +36,12 @@ function Row({
   const disabled = entry.status !== 'ready';
   const pulsing = entry.status === 'generating';
   const indent = { paddingLeft: `calc(var(--space-2) + ${entry.depth} * var(--space-4))` };
+  const quizTooltip =
+    entry.hasQuiz && entry.quizBestPct !== null
+      ? `Best quiz score: ${Math.round(entry.quizBestPct)}%`
+      : entry.hasQuiz
+        ? 'Has a quiz'
+        : undefined;
 
   const inner = (
     <>
@@ -47,6 +53,11 @@ function Row({
         {glyph}
       </span>
       <span className={styles.tocLabel}>{entry.title}</span>
+      {entry.hasQuiz && (
+        <span className={styles.tocQuizBadge} aria-label="Has a quiz">
+          Q
+        </span>
+      )}
       {entry.status === 'ready' && entry.myState === 'unread' && (
         <span className={styles.tocMinutes}>{entry.estimatedMinutes}m</span>
       )}
@@ -78,6 +89,7 @@ function Row({
       }
       style={indent}
       aria-current={isCurrent ? 'page' : undefined}
+      title={quizTooltip}
     >
       {inner}
     </Link>

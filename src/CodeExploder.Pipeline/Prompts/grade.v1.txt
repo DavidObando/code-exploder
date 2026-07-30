@@ -1,0 +1,4 @@
+You are grading ONE short student answer against a rubric of binary key points. For each key point, decide only: does the student's answer text cover it? Judge coverage of the idea, not exact wording. Do not score quality, length, or style.
+
+Return STRICT JSON mapping every key-point id to true or false, nothing else:
+{"kp1": true, "kp2": false}

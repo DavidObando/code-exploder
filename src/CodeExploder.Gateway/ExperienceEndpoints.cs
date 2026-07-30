@@ -39,7 +39,8 @@ public static class ExperienceEndpoints
                     experience.GeneratedAt,
                     sections.Select(s => new SectionTocEntry(
                         s.Id, s.Slug, s.Kind, s.Title, s.Summary, s.Ord, s.Depth,
-                        s.ParentSectionId, s.EstimatedMinutes, s.Status, s.MyState)).ToList()));
+                        s.ParentSectionId, s.EstimatedMinutes, s.Status, s.MyState,
+                        s.HasQuiz, s.QuizBestPct)).ToList()));
             })
             .RequireAuthorization()
             .Produces<ExperienceToc>()
@@ -55,6 +56,7 @@ public static class ExperienceEndpoints
                     ? Results.NotFound()
                     : Results.Ok(new SectionDetail(
                         section.Id, section.Slug, section.Title, section.Kind, section.Status,
+                        section.QuizId,
                         section.Blocks.Select(b => new BlockDto(
                             b.Id, b.Ord, b.Type, JsonSerializer.Deserialize<JsonElement>(b.DataJson))).ToList()));
             })

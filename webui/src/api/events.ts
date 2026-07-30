@@ -35,3 +35,15 @@ export interface SectionReadyData {
 export interface AnalysisFailedData {
   reason: string;
 }
+
+export interface QuizReadyData {
+  sectionId: string;
+  quizId: string;
+}
+
+export interface QuizGradedData {
+  attemptId: string;
+  quizId: string;
+  scorePct: number;
+  sectionId: string;
+}

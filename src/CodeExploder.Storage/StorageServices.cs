@@ -22,6 +22,7 @@ public static class StorageServices
         services.AddSingleton<SessionStore>();
         services.AddSingleton<AnalysisStore>();
         services.AddSingleton<ExperienceStore>();
+        services.AddSingleton<QuizStore>();
         return services;
     }
 

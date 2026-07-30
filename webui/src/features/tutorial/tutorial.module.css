@@ -126,6 +126,16 @@ a.tocRow:hover {
   flex: none;
 }
 
+.tocQuizBadge {
+  flex: none;
+  font: var(--type-micro);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 0 4px;
+  line-height: 12px;
+}
+
 /* --- Content column --- */
 .content {
   display: flex;
