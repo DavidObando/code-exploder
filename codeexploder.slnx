@@ -5,6 +5,7 @@
     <Project Path="src/CodeExploder.GitHub/CodeExploder.GitHub.csproj" />
     <Project Path="src/CodeExploder.Llm/CodeExploder.Llm.csproj" />
     <Project Path="src/CodeExploder.Pipeline/CodeExploder.Pipeline.csproj" />
+    <Project Path="src/CodeExploder.Qa/CodeExploder.Qa.csproj" />
     <Project Path="src/CodeExploder.Storage/CodeExploder.Storage.csproj" />
     <Project Path="src/CodeExploder.Gateway/CodeExploder.Gateway.csproj" />
     <Project Path="src/CodeExploder.Workers.Analysis/CodeExploder.Workers.Analysis.csproj" />

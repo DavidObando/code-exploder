@@ -302,6 +302,14 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         return (title, string.Join("\n\n", parts));
     }
 
+    public async Task SetSectionEmbeddingAsync(Guid sectionId, float[] embedding, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand("update sections set embedding = $2 where id = $1");
+        cmd.Parameters.AddWithValue(sectionId);
+        cmd.Parameters.AddWithValue(new Pgvector.Vector(embedding));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<int> CountUnreadySectionsAsync(Guid experienceId, CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand(

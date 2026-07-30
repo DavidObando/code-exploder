@@ -19,6 +19,7 @@ public sealed class LlmPipelineWorker(
     AnalysisStore analyses,
     ExperienceStore experiences,
     QuizStore quizzes,
+    CodeExploder.Qa.AnswerLoop answerLoop,
     ISessionEventBus bus,
     ILlmClient llm,
     LlmReadinessGate gate,
@@ -31,6 +32,7 @@ public sealed class LlmPipelineWorker(
     [
         LlmJobTypes.SummarizeComponent, LlmJobTypes.Synthesize, LlmJobTypes.TutorialSection,
         LlmJobTypes.FinalizeExperience, LlmJobTypes.QuizGenerate, LlmJobTypes.GradeQuiz,
+        LlmJobTypes.QaAnswer,
     ];
 
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
@@ -112,6 +114,9 @@ public sealed class LlmPipelineWorker(
                 break;
             case LlmJobTypes.GradeQuiz:
                 await RunGradeQuizAsync(p, ct);
+                break;
+            case LlmJobTypes.QaAnswer:
+                await answerLoop.AnswerAsync(p.AnalysisId, p.SessionId, p.ThreadId!.Value, p.MessageId!.Value, ct);
                 break;
             default:
                 throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
@@ -202,6 +207,12 @@ public sealed class LlmPipelineWorker(
         Stage(p, AnalysisStages.Sections, StageState.Active);
         Narrate(p, $"Planned {outline.Count} tutorial sections; writing…");
 
+        // S9: component summaries + the repo overview embed on the embed lane.
+        await queue.EnqueueAsync(
+            LlmJobTypes.EmbedSummaries,
+            JsonSerializer.Serialize(new { analysisId = p.AnalysisId }, JsonOpts),
+            analysisId: p.AnalysisId, ct: ct);
+
         var finalizeId = await queue.EnqueueBlockedAsync(
             LlmJobTypes.FinalizeExperience,
             JsonSerializer.Serialize(p with { ExperienceId = experienceId }, JsonOpts),
@@ -267,6 +278,10 @@ public sealed class LlmPipelineWorker(
         // gate on tutorial readiness (docs/05 §Quizzes).
         await queue.EnqueueAsync(
             LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts),
+            analysisId: p.AnalysisId, ct: ct);
+        await queue.EnqueueAsync(
+            LlmJobTypes.EmbedSection,
+            JsonSerializer.Serialize(new { sectionId = p.SectionId }, JsonOpts),
             analysisId: p.AnalysisId, ct: ct);
     }
 
@@ -422,7 +437,9 @@ public sealed class LlmPipelineWorker(
         int? Ordinal = null,
         string? Slug = null,
         string? Title = null,
-        Guid? AttemptId = null);
+        Guid? AttemptId = null,
+        Guid? ThreadId = null,
+        Guid? MessageId = null);
 
     private static string Slugify(string input) =>
         new(input.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());

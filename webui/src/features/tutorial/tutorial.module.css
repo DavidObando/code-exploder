@@ -1,8 +1,16 @@
 .layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr) auto;
   height: 100%;
   margin: calc(-1 * var(--space-6));
+}
+
+.contentHeader {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
 }
 
 /* --- TOC (SectionNav) --- */

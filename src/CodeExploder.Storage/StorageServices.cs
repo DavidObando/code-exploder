@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Pgvector.Npgsql;
 
 namespace CodeExploder.Storage;
 
@@ -16,13 +17,16 @@ public static class StorageServices
         var connectionString = config.GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("ConnectionStrings:Postgres is not configured.");
 
-        services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+        dataSourceBuilder.UseVector();
+        services.AddSingleton(dataSourceBuilder.Build());
         services.AddSingleton<MigrationRunner>();
         services.AddSingleton<JobQueue>();
         services.AddSingleton<SessionStore>();
         services.AddSingleton<AnalysisStore>();
         services.AddSingleton<ExperienceStore>();
         services.AddSingleton<QuizStore>();
+        services.AddSingleton<QaStore>();
         return services;
     }
 

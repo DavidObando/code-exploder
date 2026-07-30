@@ -7,7 +7,8 @@ namespace CodeExploder.Storage.Tests;
 /// <summary>One throwaway Postgres container per test class, migrated to head.</summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    // pgvector rides in the image because V0005 creates the vector extension.
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
 
     public NpgsqlDataSource DataSource { get; private set; } = null!;
 

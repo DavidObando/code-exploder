@@ -31,6 +31,7 @@ export interface SessionSummary {
   repoOwner: string;
   repoName: string;
   prNumber: number | null;
+  analysisId: string;
   status: SessionStatus;
   failureReason: string | null;
   createdAt: string;
@@ -216,4 +217,55 @@ export interface QuizAttempt {
     excluded: boolean;
     feedbackMd: string | null;
   }[];
+}
+
+// --- Q&A virtual expert (M4) ---
+
+export interface KbStatus {
+  embeddedChunks: number;
+  totalChunks: number;
+  ready: boolean;
+}
+
+export interface QaThread {
+  id: string;
+  title: string;
+  createdAt: string;
+  lastMessageAt: string | null;
+}
+
+export interface QaCitation {
+  path: string;
+  startLine: number;
+  endLine: number;
+  chunkId: string;
+}
+
+export interface QaMessage {
+  id: string;
+  ord: number;
+  role: 'user' | 'assistant';
+  /** Partial while status === 'streaming' (flushed ~1/s server-side). */
+  content: string;
+  status: 'streaming' | 'complete' | 'error' | 'cancelled';
+  citations: QaCitation[] | null;
+  createdAt: string;
+}
+
+export interface SendMessageRequest {
+  content: string;
+  sectionContext?: string;
+}
+
+export interface SendMessageResponse {
+  userMessageId: string;
+  assistantMessageId: string;
+}
+
+export interface ChunkPeek {
+  path: string;
+  startLine: number;
+  endLine: number;
+  language: string;
+  content: string;
 }

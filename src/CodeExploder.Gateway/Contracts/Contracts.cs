@@ -12,7 +12,8 @@ public sealed record SessionSummary(
     string Status,
     string? FailureReason,
     DateTimeOffset CreatedAt,
-    SessionProgress Progress);
+    SessionProgress Progress,
+    Guid AnalysisId);
 
 public sealed record NewSessionRequest(string Url, string? GitRef);
 
@@ -78,6 +79,22 @@ public sealed record QuizAttemptDto(
 public sealed record ProgressUpdateRequest(string State);
 
 public sealed record ProgressUpdateResponse(Guid SectionId, string State, SessionProgress SessionProgress);
+
+public sealed record KbStatus(int EmbeddedChunks, int TotalChunks, bool Ready);
+
+public sealed record ThreadDto(Guid Id, string Title, DateTimeOffset CreatedAt, DateTimeOffset? LastMessageAt);
+
+public sealed record NewThreadRequest(string? Title);
+
+public sealed record QaMessageDto(
+    Guid Id, int Ord, string Role, string Content, string Status,
+    System.Text.Json.JsonElement? Citations, DateTimeOffset CreatedAt);
+
+public sealed record NewMessageRequest(string Content, Guid? SectionContext);
+
+public sealed record NewMessageResponse(Guid UserMessageId, Guid AssistantMessageId);
+
+public sealed record ChunkPeek(string Path, int StartLine, int EndLine, string Language, string Content);
 
 public sealed record ErrorResponse(string Message);
 

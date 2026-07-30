@@ -31,7 +31,12 @@ section — consumed self-paced with per-section progress tracking. **M3 adds qu
 per-section comprehension checks (mostly auto-graded; one optional short answer graded
 by the LLM as binary key-point coverage, with ungradable answers excluded rather than
 marked wrong), unlimited retakes with best-score tracking, and automatic section
-completion at ≥75 %. The Q&A expert arrives in M4. Milestones M0–M8 are described in
+completion at ≥75 %. **M4 adds the Q&A virtual expert**: the knowledge base embeds on
+a parallel lane (`nomic-embed-text`, co-resident with the generator), retrieval fuses
+vector, full-text, and trigram-identifier search with reciprocal-rank fusion, and
+answers stream token-by-token into a chat panel with verified file/line citations you
+can peek inline or open on GitHub — grounded strictly in the analyzed sources.
+PR-diff mode arrives in M5. Milestones M0–M8 are described in
 [docs/08](docs/08-milestones-and-risks.md).
 
 The LLM defaults to `qwen3-coder:oc` via an OpenAI-compatible endpoint

@@ -122,7 +122,7 @@ public static class SessionEndpoints
 
     private static SessionSummary ToSummary(SessionView s) => new(
         s.Id, s.Kind, s.Title, s.RepoOwner, s.RepoName, s.PrNumber, s.Status, s.FailureReason,
-        s.CreatedAt, new SessionProgress(s.SectionsReady, s.SectionsTotal));
+        s.CreatedAt, new SessionProgress(s.SectionsReady, s.SectionsTotal), s.AnalysisId);
 
     /// <summary>
     /// Mount snapshot for the progress view: folds the durable event log into per-stage

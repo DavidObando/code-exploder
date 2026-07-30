@@ -233,6 +233,70 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
+    public async Task UpdateChunkEmbeddingsAsync(
+        IReadOnlyList<(Guid ChunkId, float[] Embedding)> embeddings, CancellationToken ct = default)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        foreach (var (chunkId, embedding) in embeddings)
+        {
+            await using var cmd = new NpgsqlCommand("update chunks set embedding = $2 where id = $1", conn);
+            cmd.Parameters.AddWithValue(chunkId);
+            cmd.Parameters.AddWithValue(new Pgvector.Vector(embedding));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    public async Task<IReadOnlyList<(Guid Id, string Content)>> GetUnembeddedChunksAsync(
+        Guid analysisId, int limit, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select id, content from chunks where analysis_id = $1 and embedding is null order by id limit $2");
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(limit);
+        var rows = new List<(Guid, string)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetGuid(0), reader.GetString(1)));
+        }
+
+        return rows;
+    }
+
+    public async Task SetSummaryEmbeddingAsync(Guid summaryId, float[] embedding, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand("update summaries set embedding = $2 where id = $1");
+        cmd.Parameters.AddWithValue(summaryId);
+        cmd.Parameters.AddWithValue(new Pgvector.Vector(embedding));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<(Guid Id, string Text)>> GetUnembeddedSummariesAsync(
+        Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select id, prose_md from summaries where analysis_id = $1 and embedding is null");
+        cmd.Parameters.AddWithValue(analysisId);
+        var rows = new List<(Guid, string)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetGuid(0), reader.GetString(1)));
+        }
+
+        return rows;
+    }
+
+    public async Task<(int Embedded, int Total)> EmbeddingCoverageAsync(Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select count(*) filter (where embedding is not null), count(*) from chunks where analysis_id = $1");
+        cmd.Parameters.AddWithValue(analysisId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await reader.ReadAsync(ct);
+        return ((int)reader.GetInt64(0), (int)reader.GetInt64(1));
+    }
+
     public async Task<int> CountChunksAsync(Guid analysisId, CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand("select count(*) from chunks where analysis_id = $1");

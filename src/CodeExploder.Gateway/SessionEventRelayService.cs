@@ -21,7 +21,7 @@ public sealed class SessionEventRelayService(
     // Stream kinds render directly in an open progress view; the user group (live
     // left-pane list) only needs lifecycle kinds. Clients dedupe the overlap by id.
     private static readonly HashSet<string> SessionGroupOnlyKinds =
-        [SessionEventKinds.AnalysisProgress, SessionEventKinds.AnalysisNarration];
+        [SessionEventKinds.AnalysisProgress, SessionEventKinds.AnalysisNarration, SessionEventKinds.QaToken];
 
     // session → owner-subject resolution cache; ownership never changes, so no eviction
     // beyond a size cap.

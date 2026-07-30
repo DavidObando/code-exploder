@@ -27,6 +27,10 @@ public static class LlmServices
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<LlmOptions>(),
             sp.GetService<ILogger<LlmReadinessGate>>() ?? NullLogger<LlmReadinessGate>.Instance));
+        services.AddSingleton<IEmbedClient>(static sp => new OllamaEmbedClient(
+            sp.GetRequiredService<HttpClient>(),
+            sp.GetRequiredService<LlmOptions>(),
+            sp.GetService<ILogger<OllamaEmbedClient>>() ?? NullLogger<OllamaEmbedClient>.Instance));
         return services;
     }
 }

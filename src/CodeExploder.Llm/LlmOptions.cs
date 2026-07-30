@@ -11,6 +11,9 @@ public sealed class LlmOptions
 
     public string Model { get; set; } = "qwen3-coder:oc";
 
+    /// <summary>Embedding model, co-resident with the generator (docs/06).</summary>
+    public string EmbedModel { get; set; } = "nomic-embed-text";
+
     public int MaxOutputTokens { get; set; } = 4096;
 
     public int TimeoutSeconds { get; set; } = 300;

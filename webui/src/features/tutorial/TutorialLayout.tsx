@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
-import { Link, Outlet, useOutletContext, useParams } from 'react-router-dom';
+import { useCallback, useEffect } from 'react';
+import { Link, Outlet, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { ExperienceToc, SessionSummary } from '../../api/types';
 import { liveEvents } from '../../services/liveEvents';
+import { useChat } from '../../store/chat';
 import ui from '../../components/ui.module.css';
+import { ChatPanel } from '../chat/ChatPanel';
 import { SectionNav } from './SectionNav';
 import { PacingBar } from './PacingBar';
 import styles from './tutorial.module.css';
@@ -21,6 +23,31 @@ export function useTutorialContext(): TutorialContext {
 export function TutorialLayout() {
   // Params merge across nested routes, so :sectionSlug is visible here.
   const { id = '', sectionSlug } = useParams<{ id: string; sectionSlug?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chatOpen = useChat((s) => s.panelOpen);
+  const setPanelOpen = useChat((s) => s.setPanelOpen);
+
+  // ?chat=1 deep-links the panel open; toggling keeps the param in sync.
+  useEffect(() => {
+    if (searchParams.get('chat') === '1') setPanelOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleChat = useCallback(
+    (open: boolean) => {
+      setPanelOpen(open);
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (open) params.set('chat', '1');
+          else params.delete('chat');
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setPanelOpen, setSearchParams],
+  );
 
   const session = useQuery({
     queryKey: ['session', id],
@@ -74,6 +101,8 @@ export function TutorialLayout() {
   }
 
   const context: TutorialContext = { toc: experience.data, session: session.data };
+  const currentSectionId =
+    experience.data.sections.find((s) => s.slug === sectionSlug)?.id ?? null;
 
   return (
     <div className={styles.layout}>
@@ -84,11 +113,28 @@ export function TutorialLayout() {
         currentSlug={sectionSlug ?? null}
       />
       <div className={styles.content}>
+        <div className={styles.contentHeader}>
+          <button
+            className={ui.buttonGhost}
+            onClick={() => toggleChat(!chatOpen)}
+            aria-pressed={chatOpen}
+          >
+            Ask the expert
+          </button>
+        </div>
         <div className={styles.reading}>
           <Outlet context={context} />
         </div>
         {sectionSlug && <PacingBar toc={experience.data} sessionId={id} currentSlug={sectionSlug} />}
       </div>
+      {chatOpen && (
+        <ChatPanel
+          session={session.data}
+          commitSha={experience.data.commitSha}
+          currentSectionId={currentSectionId}
+          onClose={() => toggleChat(false)}
+        />
+      )}
     </div>
   );
 }

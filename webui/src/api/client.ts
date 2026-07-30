@@ -1,16 +1,22 @@
 import type {
   AnalysisSnapshot,
   AppConfig,
+  ChunkPeek,
   CreateSessionRequest,
   ExperienceToc,
   Health,
+  KbStatus,
   Me,
+  QaMessage,
+  QaThread,
   Quiz,
   QuizAttempt,
   QuizAttemptRequest,
   SectionDetail,
   SectionProgressResponse,
   SectionUserState,
+  SendMessageRequest,
+  SendMessageResponse,
   SessionSummary,
   SystemStatus,
 } from './types';
@@ -43,7 +49,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  // Some 202 responses have no body (e.g. cancel).
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
@@ -78,4 +86,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  getKb: (sessionId: string) =>
+    request<KbStatus>(`/api/sessions/${encodeURIComponent(sessionId)}/kb`),
+  listThreads: (sessionId: string) =>
+    request<QaThread[]>(`/api/sessions/${encodeURIComponent(sessionId)}/threads`),
+  createThread: (sessionId: string, body: { title?: string } = {}) =>
+    request<QaThread>(`/api/sessions/${encodeURIComponent(sessionId)}/threads`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  listMessages: (threadId: string) =>
+    request<QaMessage[]>(`/api/threads/${encodeURIComponent(threadId)}/messages`),
+  /** 202; 409 (ApiError) when a generation is already in flight on the thread. */
+  sendMessage: (threadId: string, body: SendMessageRequest) =>
+    request<SendMessageResponse>(`/api/threads/${encodeURIComponent(threadId)}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** 202; partial text kept, message resolves with status 'cancelled'. */
+  cancelMessage: (messageId: string) =>
+    request<void>(`/api/messages/${encodeURIComponent(messageId)}/cancel`, { method: 'POST' }),
+  getChunk: (analysisId: string, chunkId: string) =>
+    request<ChunkPeek>(
+      `/api/analyses/${encodeURIComponent(analysisId)}/chunks/${encodeURIComponent(chunkId)}`,
+    ),
 };

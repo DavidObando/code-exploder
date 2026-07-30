@@ -1,0 +1,342 @@
+.panel {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+}
+
+@media (max-width: 1100px) {
+  .panel {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    z-index: 90;
+    border-left: none;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.headerTitle {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0;
+  flex: none;
+}
+
+.threadSelect {
+  font: var(--type-caption);
+  color: var(--text-primary);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 2px 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.headerButton {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: var(--type-caption);
+  flex: none;
+  padding: 2px 4px;
+}
+
+.headerButton:hover {
+  color: var(--text-primary);
+}
+
+.kbBanner {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--suggestion) 12%, var(--bg-1));
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-2) var(--space-4);
+}
+
+.kbGlyph {
+  color: var(--suggestion);
+  flex: none;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.msgUser {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-2) var(--space-3);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msgAssistant {
+  align-self: stretch;
+  font: var(--type-body);
+  min-width: 0;
+}
+
+.msgLabel {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.streamText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 1px;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  animation: caretBlink 1s steps(1) infinite;
+}
+
+@keyframes caretBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
+}
+
+.stopRow {
+  margin-top: var(--space-2);
+}
+
+.stoppedNote,
+.errorNote {
+  font: var(--type-caption);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+.errorNote {
+  color: var(--error);
+}
+
+/* --- Citations --- */
+.citations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.citationCard {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--citation-gold);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.citationHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.citationMarker {
+  font: var(--type-micro);
+  color: var(--citation-gold);
+  flex: none;
+}
+
+.citationPath {
+  font: var(--type-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.citationLines {
+  font: var(--type-micro);
+  color: var(--text-muted);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.citationGithub {
+  flex: none;
+  font: var(--type-caption);
+}
+
+.peek {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding: var(--space-2) 0;
+  font: var(--type-mono);
+  font-size: 12px;
+  overflow-x: auto;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-0);
+}
+
+.peekLine {
+  display: block;
+  padding: 0 var(--space-3);
+  white-space: pre;
+}
+
+.peekLineNo {
+  display: inline-block;
+  width: 40px;
+  color: var(--text-muted);
+  text-align: right;
+  padding-right: var(--space-2);
+  user-select: none;
+}
+
+.peekNote {
+  font: var(--type-caption);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* --- Empty state --- */
+.empty {
+  padding: var(--space-6) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.emptyTitle {
+  font: var(--type-heading);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.promptChip {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  transition: border-color var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
+}
+
+.promptChip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+/* --- Composer --- */
+.composer {
+  border-top: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inFlightNote {
+  font: var(--type-caption);
+  color: var(--text-muted);
+}
+
+.composerInput {
+  font: var(--type-body);
+  color: var(--text-primary);
+  background: var(--bg-0);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  min-height: 60px;
+  resize: vertical;
+}
+
+.composerInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.composerInput:disabled {
+  opacity: 0.6;
+}
+
+.composerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.contextToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.contextToggle input {
+  accent-color: var(--accent);
+}
+
+.sendButton {
+  margin-left: auto;
+}

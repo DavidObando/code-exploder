@@ -47,3 +47,17 @@ export interface QuizGradedData {
   scorePct: number;
   sectionId: string;
 }
+
+/** Coalesced text deltas — live only, never persisted, absent from catch-up. */
+export interface QaTokenData {
+  messageId: string;
+  seq: number;
+  text: string;
+}
+
+export interface QaMessageCompletedData {
+  messageId: string;
+  threadId: string;
+  status: 'complete' | 'error' | 'cancelled';
+  citations: { path: string; startLine: number; endLine: number; chunkId: string }[] | null;
+}

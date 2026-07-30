@@ -10,6 +10,13 @@ public interface ISessionEventBus
 {
     /// <summary>Fire-and-forget publish; the envelope's kind values live in Domain.SessionEventKinds.</summary>
     void Publish(Guid sessionId, string kind, object data);
+
+    /// <summary>
+    /// NOTIFY-only publish for token deltas: the envelope gets a real monotonic id
+    /// from the event sequence (client id-dedup keeps working) but no durable row —
+    /// the message row's periodic partial flush is the reconnect story (docs/04).
+    /// </summary>
+    void PublishTransient(Guid sessionId, string kind, object data);
 }
 
 /// <summary>
@@ -32,8 +39,8 @@ public sealed class PgSessionEventBus : ISessionEventBus, IAsyncDisposable
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PgSessionEventBus>? _logger;
-    private readonly Channel<(Guid SessionId, string Kind, object Data)> _queue =
-        System.Threading.Channels.Channel.CreateUnbounded<(Guid, string, object)>();
+    private readonly Channel<(Guid SessionId, string Kind, object Data, bool Persist)> _queue =
+        System.Threading.Channels.Channel.CreateUnbounded<(Guid, string, object, bool)>();
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _pump;
 
@@ -45,7 +52,10 @@ public sealed class PgSessionEventBus : ISessionEventBus, IAsyncDisposable
     }
 
     public void Publish(Guid sessionId, string kind, object data) =>
-        _queue.Writer.TryWrite((sessionId, kind, data));
+        _queue.Writer.TryWrite((sessionId, kind, data, true));
+
+    public void PublishTransient(Guid sessionId, string kind, object data) =>
+        _queue.Writer.TryWrite((sessionId, kind, data, false));
 
     public async ValueTask DisposeAsync()
     {
@@ -65,11 +75,11 @@ public sealed class PgSessionEventBus : ISessionEventBus, IAsyncDisposable
 
     private async Task PumpAsync(CancellationToken ct)
     {
-        await foreach (var (sessionId, kind, data) in _queue.Reader.ReadAllAsync(ct))
+        await foreach (var (sessionId, kind, data, persist) in _queue.Reader.ReadAllAsync(ct))
         {
             try
             {
-                await EmitAsync(sessionId, kind, data, ct);
+                await EmitAsync(sessionId, kind, data, persist, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -78,7 +88,7 @@ public sealed class PgSessionEventBus : ISessionEventBus, IAsyncDisposable
         }
     }
 
-    private async Task EmitAsync(Guid sessionId, string kind, object data, CancellationToken ct)
+    private async Task EmitAsync(Guid sessionId, string kind, object data, bool persist, CancellationToken ct)
     {
         var at = DateTimeOffset.UtcNow;
         var envelope = new JsonObject
@@ -92,25 +102,33 @@ public sealed class PgSessionEventBus : ISessionEventBus, IAsyncDisposable
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
         // Insert first so the durable row id rides inside the notified envelope; catch-up
-        // replays then carry exactly what live listeners saw.
+        // replays then carry exactly what live listeners saw. Transient events draw an
+        // id from the same sequence (per-session monotonicity holds) without a row.
         long id;
-        await using (var insert = new NpgsqlCommand(
-            "insert into pipeline_events (session_id, kind, payload, at) values ($1, $2, $3::jsonb, $4) returning id",
-            conn))
+        if (persist)
         {
+            await using var insert = new NpgsqlCommand(
+                "insert into pipeline_events (session_id, kind, payload, at) values ($1, $2, $3::jsonb, $4) returning id",
+                conn);
             insert.Parameters.AddWithValue(sessionId);
             insert.Parameters.AddWithValue(kind);
             insert.Parameters.AddWithValue(envelope.ToJsonString());
             insert.Parameters.AddWithValue(at);
             id = (long)(await insert.ExecuteScalarAsync(ct))!;
         }
+        else
+        {
+            await using var next = new NpgsqlCommand("select nextval('pipeline_events_id_seq')", conn);
+            id = (long)(await next.ExecuteScalarAsync(ct))!;
+        }
 
         envelope["id"] = id;
         var payload = envelope.ToJsonString();
 
-        await using (var update = new NpgsqlCommand(
-            "update pipeline_events set payload = $2::jsonb where id = $1", conn))
+        if (persist)
         {
+            await using var update = new NpgsqlCommand(
+                "update pipeline_events set payload = $2::jsonb where id = $1", conn);
             update.Parameters.AddWithValue(id);
             update.Parameters.AddWithValue(payload);
             await update.ExecuteNonQueryAsync(ct);

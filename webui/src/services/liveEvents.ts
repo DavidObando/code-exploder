@@ -2,8 +2,11 @@ import * as signalR from '@microsoft/signalr';
 import type { QueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { useUi } from '../store/ui';
+import { useChat } from '../store/chat';
 import type {
   AnalysisFailedData,
+  QaMessageCompletedData,
+  QaTokenData,
   QuizGradedData,
   QuizReadyData,
   SectionReadyData,
@@ -220,6 +223,18 @@ class LiveEvents {
         qc?.invalidateQueries({ queryKey: ['attempts', data.quizId] });
         qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
         qc?.invalidateQueries({ queryKey: ['sessions'] });
+        break;
+      }
+      case 'QaToken': {
+        // Stream-only: append to the chat store's per-message buffer.
+        const data = evt.data as QaTokenData;
+        useChat.getState().ingestToken(data.messageId, data.seq, data.text);
+        break;
+      }
+      case 'QaMessageCompleted': {
+        const data = evt.data as QaMessageCompletedData;
+        qc?.invalidateQueries({ queryKey: ['thread', data.threadId] });
+        useChat.getState().clearBuffer(data.messageId);
         break;
       }
       // AnalysisProgress / AnalysisNarration: stream-only, handled by listeners.

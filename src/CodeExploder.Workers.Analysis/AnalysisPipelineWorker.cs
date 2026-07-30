@@ -213,6 +213,14 @@ public sealed class AnalysisPipelineWorker(
         var inserted = await analyses.InsertChunksAsync(p.AnalysisId, fileIds, chunks, ct);
         Narrate(p, $"Chunked {processed} files into {inserted} retrieval chunks");
 
+        // S8 kicks off on the embed lane in parallel with the LLM stages; the batch
+        // job is self-draining (docs/01 §S8).
+        await queue.EnqueueAsync(
+            LlmJobTypes.EmbedBatch,
+            JsonSerializer.Serialize(new { analysisId = p.AnalysisId }, JsonOpts),
+            analysisId: p.AnalysisId,
+            ct: ct);
+
         Stage(p, AnalysisStages.Index, StageState.Done);
         await queue.EnqueueAsync(PlanJob, JsonSerializer.Serialize(p, JsonOpts), analysisId: p.AnalysisId, ct: ct);
     }
