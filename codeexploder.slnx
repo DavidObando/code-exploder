@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodeExploder.Domain/CodeExploder.Domain.csproj" />
+    <Project Path="src/CodeExploder.Storage/CodeExploder.Storage.csproj" />
+    <Project Path="src/CodeExploder.Gateway/CodeExploder.Gateway.csproj" />
+    <Project Path="src/CodeExploder.Workers.Analysis/CodeExploder.Workers.Analysis.csproj" />
+    <Project Path="src/CodeExploder.Orchestrator/CodeExploder.Orchestrator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodeExploder.Storage.Tests/CodeExploder.Storage.Tests.csproj" />
+  </Folder>
+</Solution>

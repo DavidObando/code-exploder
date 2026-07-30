@@ -1,0 +1,69 @@
+# Local/dev stack (docs/07-deployment.md). Inner dev loop:
+#   docker compose -f deploy/compose.yaml up postgres -d
+# then run the services from the IDE against localhost:5433. The full stack:
+#   docker compose -f deploy/compose.yaml --profile app up --build
+name: code-exploder
+
+x-app-env: &app-env
+  ConnectionStrings__Postgres: Host=postgres;Username=codeexploder;Password=${POSTGRES_PASSWORD:-codeexploder};Database=codeexploder
+
+services:
+  postgres:
+    # pgvector rides in the base image so the M4 embedding migrations need no image swap.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: codeexploder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codeexploder}
+      POSTGRES_DB: codeexploder
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codeexploder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    profiles: [app]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { PROJECT: CodeExploder.Gateway }
+    environment:
+      <<: *app-env
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      Auth__Mode: ${AUTH_MODE:-Oidc}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker-analysis:
+    profiles: [app]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { PROJECT: CodeExploder.Workers.Analysis }
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  orchestrator:
+    profiles: [app]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { PROJECT: CodeExploder.Orchestrator }
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg-data:

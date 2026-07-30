@@ -20,7 +20,27 @@ local Ollama endpoint. Inference is queued so a single shared GPU is never overw
 
 ## Status
 
-Design phase. The initial system design study lives in [`docs/`](docs/00-overview.md):
+**M0 (walking skeleton) complete**: solution scaffold, design-token React shell,
+PostgreSQL with an embedded migration runner, the job queue with counting joins,
+Postgres NOTIFY → SignalR event relay, compose stack, and a `noop` pipeline that
+streams fake progress end-to-end (submit → stages tick live → fan-out/join → ready).
+Milestones M1–M6 are described in [docs/08](docs/08-milestones-and-risks.md).
+
+### Dev quickstart
+
+```bash
+docker compose -f deploy/compose.yaml up postgres -d   # Postgres 17 + pgvector on :5433
+dotnet run --project src/CodeExploder.Gateway           # API + hub on :5080 (DevBypass auth)
+dotnet run --project src/CodeExploder.Workers.Analysis  # noop pipeline worker
+cd webui && npm install && npm run dev                  # Vite dev server, proxies to :5080
+```
+
+Tests: `dotnet test codeexploder.slnx` (queue join semantics run against a throwaway
+Testcontainers Postgres — Docker required) and `cd webui && npm test`.
+
+## Design
+
+The initial system design study lives in [`docs/`](docs/00-overview.md):
 
 | Doc | Contents |
 |---|---|

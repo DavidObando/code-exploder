@@ -55,3 +55,11 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Web UI
+node_modules/
+webui/dist/
+webui/coverage/
+
+# OpenAPI emit scratch
+openapi.local.json

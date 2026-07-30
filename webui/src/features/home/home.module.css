@@ -1,0 +1,179 @@
+.layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: var(--space-6);
+  height: 100%;
+  margin: calc(-1 * var(--space-6));
+}
+
+.sidebar {
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sidebarTitle {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.sessionRow {
+  position: relative;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  transition: border-color var(--dur-hover) var(--ease);
+}
+
+.sessionRow:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.sessionHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.sessionGlyph {
+  font-size: 12px;
+  flex: none;
+}
+
+.sessionTitle {
+  font: var(--type-body-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.sessionMeta {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.sessionDelete {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: var(--type-caption);
+  padding: 2px 6px;
+  border-radius: var(--radius-chip);
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
+}
+
+.sessionRow:hover .sessionDelete,
+.sessionDelete:focus-visible {
+  opacity: 1;
+}
+
+.sessionDelete:hover {
+  color: var(--error);
+}
+
+/* Thin completion bar — square and opaque per the Bar rule. */
+.miniTrack {
+  height: 3px;
+  border-radius: var(--radius-bar);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+
+.miniFill {
+  height: 100%;
+  border-radius: var(--radius-bar);
+  background: var(--accent);
+  transition: width var(--dur-control) var(--ease);
+}
+
+.empty {
+  font: var(--type-caption);
+  color: var(--text-muted);
+}
+
+.main {
+  padding: var(--space-12) var(--space-8) var(--space-6);
+  overflow-y: auto;
+}
+
+.hero {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.heroTitle {
+  font: var(--type-display);
+  margin: 0;
+}
+
+.heroSubtitle {
+  font: var(--type-body);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.urlRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.urlInput {
+  composes: input from '../../components/ui.module.css';
+  flex: 1;
+  font: var(--type-mono);
+}
+
+.refRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.refInput {
+  composes: input from '../../components/ui.module.css';
+  width: 200px;
+}
+
+.parseError {
+  font: var(--type-caption);
+  color: var(--error);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}

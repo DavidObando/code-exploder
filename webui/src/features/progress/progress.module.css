@@ -1,0 +1,179 @@
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  font: var(--type-display);
+  margin: 0;
+}
+
+/* Vertical stage list */
+.stageList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  column-gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.stage:last-child {
+  border-bottom: none;
+}
+
+.stageGlyph {
+  font: var(--type-body-strong);
+  text-align: center;
+}
+
+.stageGlyphDone {
+  composes: stageGlyph;
+  color: var(--keep);
+}
+
+.stageGlyphActive {
+  composes: stageGlyph;
+  color: var(--accent);
+}
+
+.stageGlyphPending {
+  composes: stageGlyph;
+  color: var(--text-muted);
+}
+
+.stageGlyphFailed {
+  composes: stageGlyph;
+  color: var(--error);
+}
+
+.stageBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.stageLabelRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.stageLabel {
+  font: var(--type-body-strong);
+}
+
+.stageLabelPending {
+  composes: stageLabel;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.stagePercent {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.stageDetail {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+/* Square, fully opaque progress bar — the Bar rule. */
+.stageTrack {
+  height: 6px;
+  border-radius: var(--radius-bar);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.stageFill {
+  height: 100%;
+  border-radius: var(--radius-bar);
+  background: var(--accent);
+  transition: width var(--dur-control) var(--ease);
+}
+
+/* Narration ticker */
+.ticker {
+  font: var(--type-mono);
+  color: var(--text-secondary);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.tickerLine {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tickerEmpty {
+  color: var(--text-muted);
+}
+
+/* Completion banner */
+.banner {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  background: color-mix(in srgb, var(--keep) 12%, var(--bg-1));
+  border: 1px solid var(--keep);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  font: var(--type-body-strong);
+}
+
+.bannerGlyph {
+  color: var(--keep);
+}
+
+/* Subdued failure card */
+.failureCard {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+}
+
+.failureTitle {
+  font: var(--type-heading);
+  color: var(--error);
+  margin: 0 0 var(--space-2);
+}
+
+.failureReason {
+  font: var(--type-body);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}

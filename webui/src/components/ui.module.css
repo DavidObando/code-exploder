@@ -1,0 +1,181 @@
+/* Core design-system primitives. The Bar rule: progress bars are square-cornered
+   and fully opaque — never rounded, never translucent. */
+
+.button {
+  font: var(--type-body-strong);
+  color: var(--text-primary);
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background var(--dur-hover) var(--ease), border-color var(--dur-hover) var(--ease);
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.buttonPrimary {
+  composes: button;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.buttonPrimary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.buttonDanger {
+  composes: button;
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.buttonGhost {
+  composes: button;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.buttonGhost:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.input {
+  font: var(--type-body);
+  color: var(--text-primary);
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 8px 12px;
+  transition: border-color var(--dur-hover) var(--ease);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-chip);
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--bg-2);
+}
+
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+}
+
+.progressTrack {
+  height: 6px;
+  border-radius: var(--radius-bar);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: var(--radius-bar);
+  background: var(--accent);
+  transition: width var(--dur-control) var(--ease);
+}
+
+.modalScrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-modal);
+  padding: var(--space-6);
+  min-width: 380px;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow: auto;
+  animation: modalIn var(--dur-panel) var(--ease);
+}
+
+@keyframes modalIn {
+  from {
+    transform: scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.modalTitle {
+  font: var(--type-title);
+  margin: 0 0 var(--space-3);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.toaster {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 200;
+}
+
+.toast {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  min-width: 260px;
+  max-width: 380px;
+  animation: modalIn var(--dur-control) var(--ease);
+}
+
+.toastTitle {
+  font: var(--type-body-strong);
+}
+
+.toastDetail {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}

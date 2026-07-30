@@ -1,0 +1,89 @@
+/*
+ * Code Exploder design tokens — ported from the reference design system.
+ * Dark is the default; light values come via [data-theme='light']. The Bar rule:
+ * progress bars are square-cornered and fully opaque.
+ */
+
+:root,
+[data-theme='dark'] {
+  --bg-0: #101318;
+  --bg-1: #171b22;
+  --bg-2: #1e242d;
+  --border: #2a313b;
+  --border-strong: #3a424e;
+  --text-primary: #e9edf2;
+  --text-secondary: #a7b0bc;
+  --text-muted: #6e7885;
+  --accent: #3d7bd9;
+  --accent-hover: #5490e4;
+  --suggestion: #e0a93e;
+  --keep: #46a758;
+  --error: #e5534b;
+  --focus-ring: #7ab3ff;
+}
+
+[data-theme='light'] {
+  --bg-0: #f4f5f7;
+  --bg-1: #ffffff;
+  --bg-2: #eef1f5;
+  --border: #dde2e9;
+  --border-strong: #c2cad4;
+  --text-primary: #1a1f26;
+  --text-secondary: #4b5563;
+  --text-muted: #8a94a1;
+  --accent: #2b62b8;
+  --accent-hover: #3d7bd9;
+  --suggestion: #b07d14;
+  --keep: #2e7d43;
+  --error: #c03a34;
+  --focus-ring: #2b62b8;
+}
+
+:root {
+  /* Radii: 0 bars/progress · 4 chips · 6 buttons/inputs · 10 cards · 16 modals */
+  --radius-bar: 0;
+  --radius-chip: 4px;
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-modal: 16px;
+
+  /* Spacing: 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Typography */
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --type-display: 600 28px/34px var(--font-ui);
+  --type-title: 600 20px/26px var(--font-ui);
+  --type-heading: 600 16px/22px var(--font-ui);
+  --type-body: 400 14px/21px var(--font-ui);
+  --type-body-strong: 500 14px/21px var(--font-ui);
+  --type-caption: 400 12px/16px var(--font-ui);
+  --type-micro: 500 11px/14px var(--font-ui);
+  --type-mono: 400 13px/20px var(--font-mono);
+
+  /* Motion: calm — no springs, no overshoot */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --dur-hover: 90ms;
+  --dur-control: 160ms;
+  --dur-panel: 240ms;
+  --dur-page: 320ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-hover: 0ms;
+    --dur-control: 0ms;
+    --dur-panel: 0ms;
+    --dur-page: 0ms;
+  }
+}

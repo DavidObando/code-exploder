@@ -1,0 +1,21 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+
+# Domain names like JobQueue are clearer than the suffix rule allows.
+dotnet_diagnostic.CA1711.severity = none
+# LoggerMessage delegates are overkill for our log volume.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+
+[*.{json,yml,yaml,ts,tsx,css,html,sql,xml,csproj,props,slnx}]
+indent_style = space
+indent_size = 2

@@ -1,0 +1,115 @@
+.frame {
+  display: grid;
+  grid-template-rows: 1fr 28px;
+  grid-template-columns: 72px 1fr;
+  grid-template-areas:
+    'rail main'
+    'status status';
+  height: 100%;
+}
+
+.rail {
+  grid-area: rail;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-3) 0;
+  gap: var(--space-2);
+}
+
+.railBrand {
+  font: var(--type-micro);
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--space-2) var(--space-1);
+  letter-spacing: 0.08em;
+}
+
+.railItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 60px;
+  padding: var(--space-2) 0;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: background var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
+}
+
+.railItem:hover {
+  color: var(--text-primary);
+  background: var(--bg-2);
+}
+
+.railItemActive {
+  composes: railItem;
+  color: var(--accent);
+  background: var(--bg-2);
+}
+
+.railGlyph {
+  font-size: 18px;
+  line-height: 22px;
+}
+
+.railCount {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  background: var(--suggestion);
+  color: #101318;
+  font: var(--type-micro);
+  border-radius: var(--radius-chip);
+  padding: 0 5px;
+}
+
+.main {
+  grid-area: main;
+  overflow: auto;
+  padding: var(--space-6);
+}
+
+.status {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  padding: 0 var(--space-3);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.statusRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.themeButton {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: var(--type-caption);
+}
+
+.themeButton:hover {
+  color: var(--text-primary);
+}
