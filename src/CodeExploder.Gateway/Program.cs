@@ -55,6 +55,16 @@ if (string.Equals(authMode, "DevBypass", StringComparison.OrdinalIgnoreCase))
         .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DevBypassAuthenticationHandler>(
             DevBypassAuthenticationHandler.SchemeName, _ => { });
 }
+else if (string.Equals(authMode, "SharedGate", StringComparison.OrdinalIgnoreCase))
+{
+    // The reverse proxy authenticates (Traefik basicAuth) and forwards the username in
+    // a trusted header. Safe only when the gateway is reachable exclusively via that
+    // proxy (docs/07).
+    builder.Services.AddAuthentication(SharedGateAuthenticationHandler.SchemeName)
+        .AddScheme<SharedGateOptions, SharedGateAuthenticationHandler>(
+            SharedGateAuthenticationHandler.SchemeName,
+            o => o.Header = builder.Configuration["Auth:SharedGate:Header"] ?? "X-WebAuth-User");
+}
 else
 {
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

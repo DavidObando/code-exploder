@@ -10,6 +10,7 @@ builder.Services.AddSingleton(sp => new GitHubApiClient(
     GitHubApiClient.CreateHttpClient(),
     sp.GetRequiredService<ILogger<GitHubApiClient>>()));
 builder.Services.AddHostedService<AnalysisPipelineWorker>();
+builder.Services.AddHostedService<WorkspaceJanitorService>();
 
 var host = builder.Build();
 

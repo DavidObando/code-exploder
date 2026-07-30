@@ -23,10 +23,15 @@ orchestrator
 postgres           postgres:17 + pgvector, own volume
 ```
 
-- Images built from this repo's single parameterized multi-stage `deploy/Dockerfile`
-  (`--build-arg PROJECT=…`): a Node stage builds `webui/dist` (baked into the Gateway
-  image), a .NET SDK stage publishes the selected project, runtime on
-  `dotnet/aspnet:10.0` as a non-root user.
+- Images are published to GHCR by `.github/workflows/publish.yml` on every push to
+  main (`ghcr.io/<owner>/code-exploder-{gateway,worker-analysis,worker-llm,
+  orchestrator}`, tagged `latest` + `sha-<commit>` for rollback), built from the
+  single parameterized multi-stage `deploy/Dockerfile` (`--build-arg PROJECT=…`):
+  a Node stage builds `webui/dist` (baked into the Gateway image), a .NET SDK stage
+  publishes the selected project, runtime on `dotnet/aspnet:10.0` as a non-root user.
+  The HomeInfra compose stack pulls these images; nothing builds on the target host.
+- The LLM worker joins the AI stack's Docker network so it reaches Ollama by service
+  name (`http://ollama:11434/v1`) — no cross-host hop, no addresses in config.
 - Persistent data bind-mounted under `/mnt/ai/code-exploder/{pg,workspaces,objects}`,
   owner `1000:1000`, dirs `0775` (HomeInfra convention).
 - Local dev inner loop mirrors the reference app: `compose up postgres -d`, run
@@ -43,8 +48,12 @@ postgres           postgres:17 + pgvector, own volume
 - The wildcard Let's Encrypt cert already covers the hostname; the only DNS work is
   one **DNS-only CNAME** in Cloudflare (per HomeInfra's documented convention — no
   wildcard CNAME).
-- The hostname is internet-reachable, so production runs `Auth:Mode=SharedGate`
-  (forward-auth or shared-credential); Ollama itself stays unexposed.
+- The hostname is internet-reachable, so production runs `Auth:Mode=SharedGate`:
+  Traefik's `basicAuth` middleware authenticates (credentials from a SOPS-managed
+  htpasswd entry) and forwards the username via `headerField` in the
+  `X-WebAuth-User` header, which the Gateway's SharedGate handler trusts as the
+  identity. This is safe only because the gateway is reachable exclusively through
+  that proxy. Ollama itself stays unexposed.
 
 ## Provisioning (Ansible)
 
