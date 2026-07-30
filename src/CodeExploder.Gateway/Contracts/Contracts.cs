@@ -24,7 +24,8 @@ public sealed record AnalysisSnapshot(
     string Status,
     IReadOnlyList<StageInfo> Stages,
     IReadOnlyList<NarrationLine> Narration,
-    long LastEventId);
+    long LastEventId,
+    CodeExploder.Domain.RepoSummary? Summary);
 
 public sealed record ErrorResponse(string Message);
 

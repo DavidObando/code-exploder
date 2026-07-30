@@ -63,3 +63,6 @@ webui/coverage/
 
 # OpenAPI emit scratch
 openapi.local.json
+
+# Analysis workspaces (clone cache)
+workspaces/

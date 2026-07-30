@@ -12,8 +12,8 @@ namespace CodeExploder.Gateway;
 /// </summary>
 public static class SessionEndpoints
 {
-    /// <summary>The job the M0 noop pipeline starts from (docs/08-milestones-and-risks.md M0).</summary>
-    public const string NoopPlanJob = "noop-plan";
+    /// <summary>The pipeline's first job (S0 acquire, docs/01-analysis-pipeline.md).</summary>
+    public const string AcquireJob = "acquire";
 
     public static void Map(WebApplication app)
     {
@@ -45,8 +45,16 @@ public static class SessionEndpoints
                 var sessionId = await store.CreateSessionAsync(userId, analysisId, url.Kind, url.Title, ct);
 
                 await queue.EnqueueAsync(
-                    NoopPlanJob,
-                    JsonSerializer.Serialize(new { analysisId, sessionId }),
+                    AcquireJob,
+                    JsonSerializer.Serialize(new
+                    {
+                        analysisId,
+                        sessionId,
+                        owner = url.Owner,
+                        name = url.Name,
+                        prNumber = url.PrNumber,
+                        gitRef = string.IsNullOrWhiteSpace(body.GitRef) ? null : body.GitRef.Trim(),
+                    }),
                     analysisId: analysisId,
                     ct: ct);
 
@@ -85,13 +93,24 @@ public static class SessionEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         app.MapGet("/api/sessions/{id:guid}/analysis", async (
-                Guid id, HttpContext http, SessionStore store, NpgsqlDataSource db, CancellationToken ct) =>
+                Guid id, HttpContext http, SessionStore store, AnalysisStore analyses,
+                NpgsqlDataSource db, CancellationToken ct) =>
             {
                 var userId = await ResolveUserAsync(http, store, ct);
                 var session = await store.GetForUserAsync(id, userId, ct);
-                return session is null
-                    ? Results.NotFound()
-                    : Results.Ok(await BuildSnapshotAsync(session.Status, id, db, ct));
+                if (session is null)
+                {
+                    return Results.NotFound();
+                }
+
+                RepoSummary? summary = null;
+                if (session.Status is SessionStatus.Ready or SessionStatus.Partial
+                    && await analyses.GetPlanAsync(session.AnalysisId, ct) is { } planJson)
+                {
+                    summary = JsonSerializer.Deserialize<PlanDocument>(planJson, PlanJsonOpts)?.Summary;
+                }
+
+                return Results.Ok(await BuildSnapshotAsync(session.Status, id, summary, db, ct));
             })
             .RequireAuthorization()
             .Produces<AnalysisSnapshot>()
@@ -110,8 +129,12 @@ public static class SessionEndpoints
     /// state so a page load agrees exactly with what live listeners saw. lastEventId
     /// seeds the hub's GetEventsSince catch-up.
     /// </summary>
+    private static readonly JsonSerializerOptions PlanJsonOpts = new(JsonSerializerDefaults.Web);
+
+    private sealed record PlanDocument(RepoSummary? Summary);
+
     private static async Task<AnalysisSnapshot> BuildSnapshotAsync(
-        string sessionStatus, Guid sessionId, NpgsqlDataSource db, CancellationToken ct)
+        string sessionStatus, Guid sessionId, RepoSummary? summary, NpgsqlDataSource db, CancellationToken ct)
     {
         var stages = AnalysisStages.All.ToDictionary(
             s => s.Key,
@@ -174,6 +197,7 @@ public static class SessionEndpoints
             sessionStatus,
             AnalysisStages.All.Select(s => stages[s.Key]).ToList(),
             narration,
-            lastEventId);
+            lastEventId,
+            summary);
     }
 }

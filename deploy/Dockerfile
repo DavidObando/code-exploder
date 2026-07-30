@@ -28,7 +28,11 @@ ENV PROJECT_DLL=${PROJECT}.dll \
     DOTNET_EnableDiagnostics=0
 WORKDIR /app
 COPY --from=build /app .
-RUN groupadd -r codeexploder && useradd -r -g codeexploder codeexploder \
+# git: required by Workers.Analysis for S0 acquire (shallow clones); small cost to
+# carry in the shared image.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r codeexploder && useradd -r -g codeexploder codeexploder \
     && mkdir -p /var/lib/code-exploder/workspaces \
     && chown -R codeexploder:codeexploder /var/lib/code-exploder
 USER codeexploder

@@ -238,7 +238,8 @@
           "status",
           "stages",
           "narration",
-          "lastEventId"
+          "lastEventId",
+          "summary"
         ],
         "type": "object",
         "properties": {
@@ -260,6 +261,55 @@
           "lastEventId": {
             "type": "integer",
             "format": "int64"
+          },
+          "summary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RepoSummary"
+              }
+            ]
+          }
+        }
+      },
+      "ChurnStat": {
+        "required": [
+          "path",
+          "commits"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "commits": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ComponentSummary": {
+        "required": [
+          "name",
+          "fileCount",
+          "topFiles"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "topFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -293,6 +343,32 @@
         "properties": {
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "LanguageStat": {
+        "required": [
+          "name",
+          "files",
+          "bytes",
+          "percent"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "files": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "percent": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -359,6 +435,101 @@
           "activeJobs": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "RepoSummary": {
+        "required": [
+          "commitSha",
+          "description",
+          "fileCount",
+          "analyzedFileCount",
+          "excludedFileCount",
+          "chunkCount",
+          "totalBytes",
+          "languages",
+          "buildSystems",
+          "ciConfigs",
+          "entryPoints",
+          "components",
+          "topChurnFiles",
+          "commitCount",
+          "contributorCount"
+        ],
+        "type": "object",
+        "properties": {
+          "commitSha": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "analyzedFileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "excludedFileCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "chunkCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LanguageStat"
+            }
+          },
+          "buildSystems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ciConfigs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "entryPoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComponentSummary"
+            }
+          },
+          "topChurnFiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChurnStat"
+            }
+          },
+          "commitCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "contributorCount": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

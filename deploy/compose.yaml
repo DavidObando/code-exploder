@@ -49,6 +49,9 @@ services:
       args: { PROJECT: CodeExploder.Workers.Analysis }
     environment:
       <<: *app-env
+      Workspaces__Root: /var/lib/code-exploder/workspaces
+    volumes:
+      - workspaces:/var/lib/code-exploder/workspaces
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,3 +70,4 @@ services:
 
 volumes:
   pg-data:
+  workspaces:

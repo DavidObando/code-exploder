@@ -1,10 +1,15 @@
+using CodeExploder.GitHub;
 using CodeExploder.Storage;
 using CodeExploder.Workers.Analysis;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddCodeExploderStorage(builder.Configuration);
 builder.Services.AddSessionEventPublishing();
-builder.Services.AddHostedService<NoopPipelineWorker>();
+builder.Services.AddSingleton<GitCli>();
+builder.Services.AddSingleton(sp => new GitHubApiClient(
+    GitHubApiClient.CreateHttpClient(),
+    sp.GetRequiredService<ILogger<GitHubApiClient>>()));
+builder.Services.AddHostedService<AnalysisPipelineWorker>();
 
 var host = builder.Build();
 

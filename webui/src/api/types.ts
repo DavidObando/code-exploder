@@ -55,9 +55,29 @@ export interface StageInfo {
   detail: string | null;
 }
 
+export interface RepoSummary {
+  commitSha: string;
+  description: string | null;
+  fileCount: number;
+  analyzedFileCount: number;
+  excludedFileCount: number;
+  chunkCount: number;
+  totalBytes: number;
+  languages: { name: string; files: number; bytes: number; percent: number }[];
+  buildSystems: string[];
+  ciConfigs: string[];
+  entryPoints: string[];
+  components: { name: string; fileCount: number; topFiles: string[] }[];
+  topChurnFiles: { path: string; commits: number }[];
+  commitCount: number;
+  contributorCount: number;
+}
+
 export interface AnalysisSnapshot {
   status: SessionStatus;
   stages: StageInfo[];
   narration: { at: string; text: string }[];
   lastEventId: number;
+  /** Null until the run is ready. */
+  summary: RepoSummary | null;
 }

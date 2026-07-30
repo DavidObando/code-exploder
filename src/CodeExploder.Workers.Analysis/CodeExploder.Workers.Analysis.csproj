@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <ItemGroup>
+    <ProjectReference Include="..\CodeExploder.Analysis\CodeExploder.Analysis.csproj" />
     <ProjectReference Include="..\CodeExploder.Domain\CodeExploder.Domain.csproj" />
+    <ProjectReference Include="..\CodeExploder.GitHub\CodeExploder.GitHub.csproj" />
     <ProjectReference Include="..\CodeExploder.Storage\CodeExploder.Storage.csproj" />
   </ItemGroup>
 

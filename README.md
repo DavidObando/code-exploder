@@ -20,11 +20,13 @@ local Ollama endpoint. Inference is queued so a single shared GPU is never overw
 
 ## Status
 
-**M0 (walking skeleton) complete**: solution scaffold, design-token React shell,
-PostgreSQL with an embedded migration runner, the job queue with counting joins,
-Postgres NOTIFY → SignalR event relay, compose stack, and a `noop` pipeline that
-streams fake progress end-to-end (submit → stages tick live → fan-out/join → ready).
-Milestones M1–M6 are described in [docs/08](docs/08-milestones-and-risks.md).
+**M1 (deterministic analysis) complete**: paste a public GitHub repo (or PR) URL and
+the pipeline really clones it (shallow, size-guarded), maps the repository —
+languages, build systems, entry points, CI configs, git churn — chunks it into
+FTS-indexed retrieval chunks, detects components, and presents live fact-based
+narration plus a repository-vitals card (language bar, components, churn) when ready.
+No LLM yet: tutorial generation arrives in M2. Milestones M0–M8 are described in
+[docs/08](docs/08-milestones-and-risks.md).
 
 ### Dev quickstart
 

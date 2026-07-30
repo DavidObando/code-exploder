@@ -20,6 +20,7 @@ public static class StorageServices
         services.AddSingleton<MigrationRunner>();
         services.AddSingleton<JobQueue>();
         services.AddSingleton<SessionStore>();
+        services.AddSingleton<AnalysisStore>();
         return services;
     }
 

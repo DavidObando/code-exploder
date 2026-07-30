@@ -11,6 +11,7 @@ import { usePageTitle } from '../../lib/usePageTitle';
 import { StageList } from './StageList';
 import type { LiveStageProgress } from './StageList';
 import { NarrationTicker } from './NarrationTicker';
+import { RepoSummaryCard } from './RepoSummaryCard';
 import ui from '../../components/ui.module.css';
 import styles from './progress.module.css';
 
@@ -114,6 +115,8 @@ export function AnalysisProgress() {
         </span>
         <span className={ui.chip}>{status}</span>
       </header>
+
+      {status === 'ready' && snapshot.summary && <RepoSummaryCard summary={snapshot.summary} />}
 
       {status === 'ready' && (
         <div className={styles.banner} role="status">

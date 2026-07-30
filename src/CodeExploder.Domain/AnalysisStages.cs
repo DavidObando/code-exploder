@@ -8,18 +8,18 @@ namespace CodeExploder.Domain;
 public static class AnalysisStages
 {
     public const string Clone = "clone";
-    public const string Index = "index";
     public const string Map = "map";
-    public const string Sections = "sections";
+    public const string Index = "index";
+    public const string Plan = "plan";
     public const string Finalize = "finalize";
 
-    /// <summary>Stage keys in pipeline order, with UI labels.</summary>
+    /// <summary>Stage keys in pipeline order, with UI labels (M1: S0–S3 + finalize).</summary>
     public static readonly IReadOnlyList<(string Key, string Label)> All =
     [
         (Clone, "Fetch & clone"),
-        (Index, "Index"),
-        (Map, "Map structure"),
-        (Sections, "Write sections"),
+        (Map, "Map repository"),
+        (Index, "Index & chunk"),
+        (Plan, "Plan analysis"),
         (Finalize, "Finalize"),
     ];
 }

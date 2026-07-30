@@ -70,6 +70,17 @@
   --type-micro: 500 11px/14px var(--font-ui);
   --type-mono: 400 13px/20px var(--font-mono);
 
+  /* Categorical chart ramp (language bars etc.) — same hues in light and dark,
+     derived from the palette (accent blue, keep green, suggestion gold, …).
+     --chart-other is the muted catch-all segment. */
+  --chart-1: #3d7bd9;
+  --chart-2: #46a758;
+  --chart-3: #e0a93e;
+  --chart-4: #8e85e6;
+  --chart-5: #3aa7a3;
+  --chart-6: #d4726a;
+  --chart-other: #6e7885;
+
   /* Motion: calm — no springs, no overshoot */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);

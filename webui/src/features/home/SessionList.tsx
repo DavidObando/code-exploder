@@ -20,7 +20,10 @@ const statusGlyph: Record<SessionStatus, { glyph: string; color: string }> = {
 function SessionRow({ session, onDelete }: { session: SessionSummary; onDelete: () => void }) {
   const { glyph, color } = statusGlyph[session.status];
   const { completedSections, totalSections } = session.progress;
-  const percent = totalSections > 0 ? Math.round((completedSections / totalSections) * 100) : 0;
+  // No sections exist yet in M1 ({0,0}); hide the completion bar rather than
+  // showing a misleading empty (or full) bar.
+  const showBar = totalSections > 0;
+  const percent = showBar ? Math.round((completedSections / totalSections) * 100) : 0;
 
   return (
     <Link to={`/sessions/${session.id}/progress`} className={styles.sessionRow}>
@@ -33,9 +36,11 @@ function SessionRow({ session, onDelete }: { session: SessionSummary; onDelete: 
       <div className={styles.sessionMeta}>
         {session.status} · {relativeTime(session.createdAt)}
       </div>
-      <div className={styles.miniTrack} aria-hidden="true">
-        <div className={styles.miniFill} style={{ width: `${percent}%` }} />
-      </div>
+      {showBar && (
+        <div className={styles.miniTrack} aria-hidden="true">
+          <div className={styles.miniFill} style={{ width: `${percent}%` }} />
+        </div>
+      )}
       <button
         className={styles.sessionDelete}
         aria-label={`Delete ${session.title}`}

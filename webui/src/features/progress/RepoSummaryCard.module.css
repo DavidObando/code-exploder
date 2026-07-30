@@ -1,0 +1,167 @@
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  font: var(--type-heading);
+  margin: 0;
+}
+
+.sha {
+  font: var(--type-mono);
+  color: var(--text-secondary);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 1px 6px;
+}
+
+.description {
+  font: var(--type-body);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Stacked language bar — one square-cornered, fully opaque bar (the Bar rule). */
+.langBar {
+  display: flex;
+  height: 10px;
+  border-radius: var(--radius-bar);
+  overflow: hidden;
+  background: var(--bg-2);
+}
+
+.langSeg {
+  height: 100%;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.legendSwatch {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-bar);
+  flex: none;
+}
+
+.legendPercent {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.statRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-3);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statValue {
+  font: var(--type-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.statLabel {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.chipRowLabel {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-right: var(--space-1);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 700px) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.listTitle {
+  font: var(--type-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.monoList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.monoRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: var(--type-mono);
+  min-width: 0;
+}
+
+.monoName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.monoCount {
+  margin-left: auto;
+  color: var(--text-muted);
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
