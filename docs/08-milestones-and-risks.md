@@ -36,6 +36,18 @@ Each milestone is independently demoable.
   retrieval), and ask-expert (the Q&A loop, streamed). Remote access rides the same
   Auth:Mode gate as the web UI; the server is a thin adapter over the Gateway API so
   the KB has exactly one contract.
+- **M9 — Origin story.** The Song Exploder moment: take the product apart, and piece
+  by piece, tell the story of how it was made — from the git history. A full-depth
+  history pass (unlike the shallow analysis clone) mines the repository's life
+  deterministically: era segmentation (bursts, lulls, refactors, pivots), the birth
+  commit of each component, key "moments" (first test, first CI, big rewrites,
+  dependency shifts), and the cast of contributors. The LLM then narrates it as a
+  chaptered, self-paced story section — "how this codebase came to be" — with a
+  timeline visualization, architecture diagrams that evolve era by era (reusing the
+  staged-diagram renderer with time as the reveal axis), and citations pointing at
+  the actual commits and the files they introduced. Quizzes and Q&A extend naturally
+  ("when and why was the queue introduced?"). Deterministic history mining rides the
+  cpu lane; narration is a section-generation variant on the gpu lane.
 
 ## Risk register
 

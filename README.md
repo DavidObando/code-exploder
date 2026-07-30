@@ -18,26 +18,23 @@ hosted LLMs, then serves:
 Everything runs on your own hardware: .NET 10 + React, PostgreSQL (+pgvector), and a
 local Ollama endpoint. Inference is queued so a single shared GPU is never overwhelmed.
 
-## Status
+## Milestones
 
-**M2 (tutorial generation) complete**: paste a public GitHub repo (or PR) URL and the
-pipeline clones and deterministically maps it (M1), then a locally hosted LLM
-generates the full tutorial experience — component summaries fan out into an
-architecture synthesis, then sections publish progressively: an intro, an
-architecture tour and product-scenario walkthroughs with **progressively revealed
-whiteboard diagrams** (the LLM emits validated JSON specs; Mermaid is rendered
-deterministically), verified file/line code citations, and a build/test/release
-section — consumed self-paced with per-section progress tracking. **M3 adds quizzes**:
-per-section comprehension checks (mostly auto-graded; one optional short answer graded
-by the LLM as binary key-point coverage, with ungradable answers excluded rather than
-marked wrong), unlimited retakes with best-score tracking, and automatic section
-completion at ≥75 %. **M4 adds the Q&A virtual expert**: the knowledge base embeds on
-a parallel lane (`nomic-embed-text`, co-resident with the generator), retrieval fuses
-vector, full-text, and trigram-identifier search with reciprocal-rank fusion, and
-answers stream token-by-token into a chat panel with verified file/line citations you
-can peek inline or open on GitHub — grounded strictly in the analyzed sources.
-PR-diff mode arrives in M5. Milestones M0–M8 are described in
+The core product (M0–M4) works end-to-end today. Full descriptions in
 [docs/08](docs/08-milestones-and-risks.md).
+
+| | Milestone | What it delivers |
+|---|---|---|
+| ✅ | **M0 — Walking skeleton** | Solution scaffold, design-token shell, Postgres job queue with counting joins, NOTIFY → SignalR event relay, compose stack |
+| ✅ | **M1 — Deterministic analysis** | Shallow size-guarded clone, repo map (languages, build systems, entry points, churn), FTS-indexed chunking, component detection, repo-vitals card |
+| ✅ | **M2 — Tutorial generation** | Component summaries → architecture synthesis → progressively published sections with staged-reveal whiteboard diagrams and verified code citations |
+| ✅ | **M3 — Quizzes** | Per-section checks: auto-graded questions + one LLM-graded short answer (binary key-point coverage; ungradable ≠ wrong), retakes, ≥75 % auto-completes |
+| ✅ | **M4 — Q&A virtual expert** | pgvector knowledge base, vector+FTS+trigram retrieval with RRF fusion, token-streamed answers with peekable file/line citations |
+| ⬜ | **M5 — PR-diff explainer** | Paste a PR URL: incremental analysis, overlay diagrams badging changed nodes, review-order walkthrough |
+| 🔄 | **M6 — Deploy + hardening** | Home-infrastructure deployment (Traefik ingress, SOPS secrets, published images), production auth gate, retention |
+| ⬜ | **M7 — Seeded demo report** | A pre-baked analysis bundle installed as a ready session for product review; doubles as analysis backup/restore |
+| ⬜ | **M8 — MCP server** | The knowledge base as MCP tools (stdio + streamable HTTP) for agents and IDEs: search, summaries, sections, ask-expert |
+| ⬜ | **M9 — Origin story** | The Song Exploder moment: mine the full git history and tell, piece by piece, the story of how the product was made — eras, key commits, evolving architecture diagrams, narrated as a chaptered story |
 
 The LLM defaults to `qwen3-coder:oc` via an OpenAI-compatible endpoint
 (`Llm__BaseUrl`, default `http://localhost:11434/v1`); the embedding/generation
@@ -48,7 +45,8 @@ GPU-co-residency budget is documented in [docs/06](docs/06-llm-strategy.md).
 ```bash
 docker compose -f deploy/compose.yaml up postgres -d   # Postgres 17 + pgvector on :5433
 dotnet run --project src/CodeExploder.Gateway           # API + hub on :5080 (DevBypass auth)
-dotnet run --project src/CodeExploder.Workers.Analysis  # noop pipeline worker
+dotnet run --project src/CodeExploder.Workers.Analysis  # deterministic-analysis worker
+dotnet run --project src/CodeExploder.Workers.Llm       # generation + embedding lanes (needs Ollama)
 cd webui && npm install && npm run dev                  # Vite dev server, proxies to :5080
 ```
 
@@ -69,7 +67,7 @@ The initial system design study lives in [`docs/`](docs/00-overview.md):
 | [05-ux](docs/05-ux.md) | Pages, content model, progressive whiteboard, quizzes, chat |
 | [06-llm-strategy](docs/06-llm-strategy.md) | Model selection, context packing, token budgets, RAG design |
 | [07-deployment](docs/07-deployment.md) | Home-infrastructure deployment, ingress, secrets |
-| [08-milestones-and-risks](docs/08-milestones-and-risks.md) | Milestones M0–M6, risk register |
+| [08-milestones-and-risks](docs/08-milestones-and-risks.md) | Milestones M0–M9, risk register |
 
 ## License
 
