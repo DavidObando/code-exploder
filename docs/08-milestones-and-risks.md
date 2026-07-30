@@ -23,6 +23,19 @@ Each milestone is independently demoable.
 - **M6 — Deploy + hardening.** HomeInfra role/route/DNS, SharedGate auth, retention,
   degradation ladder + idle/overnight lane (night-shift upgrades), honest ETAs,
   backups.
+- **M7 — Seeded demo report.** A pre-baked analysis of a demo repository packed with
+  the deployment for product-review purposes: an export/import bundle format for a
+  completed analysis (experience content, summaries, diagrams, quizzes, KB rows) plus
+  a seeding step (startup job or CLI) that installs it as a ready session — reviewers
+  see the full experience immediately, no GPU or wait required. The bundle format
+  doubles as the backup/restore unit for analyses.
+- **M8 — MCP server.** Expose the knowledge base to MCP clients, so agents and IDEs
+  can interact with what an analysis produced: an MCP server speaking stdio (local)
+  and streamable HTTP (remote) that wraps the Code Exploder APIs — tools such as
+  list-sessions, get-repo-summary, get-section, search-knowledge-base (vector + FTS
+  retrieval), and ask-expert (the Q&A loop, streamed). Remote access rides the same
+  Auth:Mode gate as the web UI; the server is a thin adapter over the Gateway API so
+  the KB has exactly one contract.
 
 ## Risk register
 
