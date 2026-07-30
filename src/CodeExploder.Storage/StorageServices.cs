@@ -21,6 +21,7 @@ public static class StorageServices
         services.AddSingleton<JobQueue>();
         services.AddSingleton<SessionStore>();
         services.AddSingleton<AnalysisStore>();
+        services.AddSingleton<ExperienceStore>();
         return services;
     }
 

@@ -56,6 +56,25 @@ services:
       postgres:
         condition: service_healthy
 
+  worker-llm:
+    profiles: [app]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args: { PROJECT: CodeExploder.Workers.Llm }
+    environment:
+      <<: *app-env
+      Workspaces__Root: /var/lib/code-exploder/workspaces
+      # On the target host the Ollama container is reachable by service name; see
+      # docs/07-deployment.md. Override for other setups.
+      Llm__BaseUrl: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      Llm__Model: ${LLM_MODEL:-qwen3-coder:oc}
+    volumes:
+      - workspaces:/var/lib/code-exploder/workspaces
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   orchestrator:
     profiles: [app]
     build:

@@ -1,0 +1,3 @@
+Your previous response failed validation. Return ONLY the corrected strict JSON — no commentary, no fences. The validation errors were:
+
+{errors}

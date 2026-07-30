@@ -26,8 +26,10 @@ export interface AnalysisNarrationData {
 }
 
 export interface SectionReadyData {
-  ordinal: number;
+  sectionId: string;
+  slug: string;
   title: string;
+  ordinal: number;
 }
 
 export interface AnalysisFailedData {

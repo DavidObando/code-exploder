@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type {
@@ -118,12 +118,17 @@ export function AnalysisProgress() {
 
       {status === 'ready' && snapshot.summary && <RepoSummaryCard summary={snapshot.summary} />}
 
-      {status === 'ready' && (
+      {(status === 'ready' || status === 'partial') && (
         <div className={styles.banner} role="status">
           <span className={styles.bannerGlyph} aria-hidden="true">
             ✓
           </span>
-          Analysis complete — the tutorial experience arrives in M2.
+          <span>
+            {status === 'ready' ? 'Analysis complete.' : 'Analysis finished with some failed sections.'}
+          </span>
+          <Link className={ui.buttonPrimary} to={`/sessions/${id}/learn`} style={{ marginLeft: 'auto' }}>
+            Open the tutorial →
+          </Link>
         </div>
       )}
 

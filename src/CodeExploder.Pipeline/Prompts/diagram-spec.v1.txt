@@ -1,0 +1,17 @@
+You are preparing a whiteboard diagram SPEC (not diagram syntax) that will be rendered deterministically. The diagram is revealed stage by stage to a learner, so order stages from the simplest core outward. Work ONLY from the provided architecture material.
+
+Return STRICT JSON (no markdown fences, no commentary):
+{
+  "kind": "flowchart" | "sequence",
+  "title": "short title",
+  "nodes": [{"id": "kebab-id", "label": "Short Label", "group": "optional-layer-name-or-null", "note": "one-clause tooltip or null"}],
+  "edges": [{"from": "node-id", "to": "node-id", "label": "short verb phrase or null"}],
+  "stages": [{"title": "stage title", "narrationMd": "2-4 sentences a tutor would say while revealing this stage", "nodeIds": ["ids newly revealed in this stage"], "edgeIndexes": [indexes into edges newly revealed]}]
+}
+
+Rules:
+- Use the requested kind. For "sequence", edges are the ordered messages of the scenario and nodes are its participants.
+- Every edge endpoint must be a listed node id. Edge indexes are 0-based positions in your own edges array.
+- 3-5 stages. Every node and edge must be revealed by exactly one stage (union of all stages covers everything; no repeats).
+- Stage 1 shows the minimal core (2-3 nodes); later stages open up complexity.
+- Narration is the heart of the experience: explain WHY each revealed piece exists, referencing what is already visible.

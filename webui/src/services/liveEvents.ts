@@ -186,10 +186,12 @@ class LiveEvents {
         const data = evt.data as SectionReadyData;
         useUi.getState().toast('success', 'Section ready', data.title);
         qc?.invalidateQueries({ queryKey: ['analysis', evt.sessionId] });
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
         break;
       }
       case 'AnalysisCompleted':
         qc?.invalidateQueries({ queryKey: ['analysis', evt.sessionId] });
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
         qc?.invalidateQueries({ queryKey: ['sessions'] });
         break;
       case 'AnalysisFailed': {

@@ -27,6 +27,36 @@ public sealed record AnalysisSnapshot(
     long LastEventId,
     CodeExploder.Domain.RepoSummary? Summary);
 
+public sealed record ExperienceToc(
+    Guid ExperienceId,
+    int Version,
+    string CommitSha,
+    string Model,
+    DateTimeOffset GeneratedAt,
+    IReadOnlyList<SectionTocEntry> Sections);
+
+public sealed record SectionTocEntry(
+    Guid Id,
+    string Slug,
+    string Kind,
+    string Title,
+    string Summary,
+    int Ord,
+    int Depth,
+    Guid? ParentSectionId,
+    int EstimatedMinutes,
+    string Status,
+    string MyState);
+
+public sealed record BlockDto(Guid Id, int Ord, string Type, System.Text.Json.JsonElement Data);
+
+public sealed record SectionDetail(
+    Guid Id, string Slug, string Title, string Kind, string Status, IReadOnlyList<BlockDto> Blocks);
+
+public sealed record ProgressUpdateRequest(string State);
+
+public sealed record ProgressUpdateResponse(Guid SectionId, string State, SessionProgress SessionProgress);
+
 public sealed record ErrorResponse(string Message);
 
 public sealed record HealthResponse(string Status);

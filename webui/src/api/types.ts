@@ -81,3 +81,87 @@ export interface AnalysisSnapshot {
   /** Null until the run is ready. */
   summary: RepoSummary | null;
 }
+
+// --- Tutorial experience (M2) ---
+
+export type SectionKind = 'intro' | 'architecture' | 'scenario' | 'build';
+export type SectionStatus = 'pending' | 'generating' | 'ready' | 'failed';
+export type SectionUserState = 'unread' | 'read' | 'skipped' | 'completed';
+
+export interface SectionTocEntry {
+  id: string;
+  slug: string;
+  kind: SectionKind;
+  title: string;
+  summary: string;
+  ord: number;
+  depth: number;
+  parentSectionId: string | null;
+  estimatedMinutes: number;
+  status: SectionStatus;
+  myState: SectionUserState;
+}
+
+export interface ExperienceToc {
+  experienceId: string;
+  version: number;
+  commitSha: string;
+  model: string;
+  generatedAt: string;
+  sections: SectionTocEntry[];
+}
+
+export interface DiagramStage {
+  title: string;
+  narrationMd: string;
+  reveal: { nodes: string[]; edges: number[] };
+}
+
+export interface DiagramData {
+  diagramKind: 'flowchart' | 'sequence';
+  title: string;
+  /** Full mermaid document — rendered once; stages reveal via CSS ghosting. */
+  mermaid: string;
+  stages: DiagramStage[];
+}
+
+export interface CodeBlockData {
+  path: string;
+  startLine: number;
+  endLine: number;
+  language: string;
+  content: string;
+  captionMd: string | null;
+}
+
+export interface CalloutData {
+  variant: 'insight' | 'warning' | 'convention';
+  title: string;
+  md: string;
+}
+
+interface BlockBase {
+  id: string;
+  ord: number;
+}
+
+export type Block =
+  | (BlockBase & { type: 'markdown'; data: { md: string } })
+  | (BlockBase & { type: 'code'; data: CodeBlockData })
+  | (BlockBase & { type: 'callout'; data: CalloutData })
+  | (BlockBase & { type: 'diagram'; data: DiagramData });
+
+export interface SectionDetail {
+  id: string;
+  slug: string;
+  title: string;
+  kind: SectionKind;
+  status: SectionStatus;
+  blocks: Block[];
+}
+
+export interface SectionProgressResponse {
+  sectionId: string;
+  state: SectionUserState;
+  sessionProgress: { completedSections: number; totalSections: number };
+}

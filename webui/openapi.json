@@ -154,6 +154,125 @@
         }
       }
     },
+    "/api/sessions/{id}/experience": {
+      "get": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperienceToc"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/sections/{sectionId}": {
+      "get": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "sectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/sections/{sectionId}/progress": {
+      "put": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "sectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgressUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "tags": [
@@ -274,6 +393,31 @@
           }
         }
       },
+      "BlockDto": {
+        "required": [
+          "id",
+          "ord",
+          "type",
+          "data"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ord": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/JsonElement"
+          }
+        }
+      },
       "ChurnStat": {
         "required": [
           "path",
@@ -335,6 +479,43 @@
           }
         }
       },
+      "ExperienceToc": {
+        "required": [
+          "experienceId",
+          "version",
+          "commitSha",
+          "model",
+          "generatedAt",
+          "sections"
+        ],
+        "type": "object",
+        "properties": {
+          "experienceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "commitSha": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SectionTocEntry"
+            }
+          }
+        }
+      },
       "HealthResponse": {
         "required": [
           "status"
@@ -346,6 +527,7 @@
           }
         }
       },
+      "JsonElement": {},
       "LanguageStat": {
         "required": [
           "name",
@@ -418,6 +600,37 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "ProgressUpdateRequest": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "ProgressUpdateResponse": {
+        "required": [
+          "sectionId",
+          "state",
+          "sessionProgress"
+        ],
+        "type": "object",
+        "properties": {
+          "sectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string"
+          },
+          "sessionProgress": {
+            "$ref": "#/components/schemas/SessionProgress"
           }
         }
       },
@@ -530,6 +743,100 @@
           "contributorCount": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "SectionDetail": {
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "kind",
+          "status",
+          "blocks"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockDto"
+            }
+          }
+        }
+      },
+      "SectionTocEntry": {
+        "required": [
+          "id",
+          "slug",
+          "kind",
+          "title",
+          "summary",
+          "ord",
+          "depth",
+          "parentSectionId",
+          "estimatedMinutes",
+          "status",
+          "myState"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "ord": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "parentSectionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "estimatedMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "myState": {
+            "type": "string"
           }
         }
       },

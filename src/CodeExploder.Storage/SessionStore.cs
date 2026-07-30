@@ -6,12 +6,24 @@ namespace CodeExploder.Storage;
 /// <summary>Raw-SQL store for users, repos, analyses, and sessions (M0 subset).</summary>
 public sealed class SessionStore(NpgsqlDataSource dataSource)
 {
+    // Progress = user-completed / total depth-0 sections of the latest experience
+    // (docs/04). The analyses.sections_* counters drive generation progress events only.
     private const string SessionViewSelect = """
         select s.id, s.kind, s.title, r.owner, r.name, a.pr_number, s.status,
-               s.failure_reason, s.created_at, s.analysis_id, a.sections_total, a.sections_ready
+               s.failure_reason, s.created_at, s.analysis_id,
+               coalesce(prog.total, 0), coalesce(prog.completed, 0)
         from sessions s
         join analyses a on a.id = s.analysis_id
         join repos r on r.id = a.repo_id
+        left join lateral (
+            select count(*)::int as total,
+                   (count(*) filter (where sp.state = 'completed'))::int as completed
+            from experiences e
+            join sections sec on sec.experience_id = e.id and sec.depth = 0
+            left join section_progress sp on sp.section_id = sec.id and sp.user_id = s.user_id
+            where e.session_id = s.id
+              and e.version = (select max(version) from experiences e2 where e2.session_id = s.id)
+        ) prog on true
         """;
 
     public async Task<Guid> GetOrCreateUserAsync(string subject, string displayName, CancellationToken ct = default)

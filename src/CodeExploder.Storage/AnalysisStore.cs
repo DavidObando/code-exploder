@@ -158,6 +158,81 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
+    public async Task<IReadOnlyList<(Guid Id, string Name)>> GetComponentsAsync(
+        Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select id, name from components where analysis_id = $1 order by plan_rank");
+        cmd.Parameters.AddWithValue(analysisId);
+        var rows = new List<(Guid, string)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetGuid(0), reader.GetString(1)));
+        }
+
+        return rows;
+    }
+
+    public async Task InsertSummaryAsync(
+        Guid analysisId, string scope, Guid? componentId, string proseMd, string? structuredJson,
+        string model, string promptVersion, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            insert into summaries (id, analysis_id, scope, component_id, prose_md, structured, model, prompt_version)
+            values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+            """);
+        cmd.Parameters.AddWithValue(Guid.NewGuid());
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(scope);
+        cmd.Parameters.AddWithValue((object?)componentId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(proseMd);
+        cmd.Parameters.AddWithValue((object?)structuredJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(model);
+        cmd.Parameters.AddWithValue(promptVersion);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Component summaries as (componentName, proseMd, structuredJson) for the S5 pack.</summary>
+    public async Task<IReadOnlyList<(string Component, string ProseMd, string? StructuredJson)>> GetComponentSummariesAsync(
+        Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select c.name, s.prose_md, s.structured::text
+            from summaries s
+            join components c on c.id = s.component_id
+            where s.analysis_id = $1 and s.scope = 'component'
+            order by c.plan_rank
+            """);
+        cmd.Parameters.AddWithValue(analysisId);
+        var rows = new List<(string, string, string?)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)));
+        }
+
+        return rows;
+    }
+
+    public async Task<string?> GetRepoSummaryStructuredAsync(Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select structured::text from summaries where analysis_id = $1 and scope = 'repo' order by created_at desc limit 1");
+        cmd.Parameters.AddWithValue(analysisId);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
+    public async Task<int> CountComponentSummariesAsync(Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select count(*) from summaries where analysis_id = $1 and scope = 'component'");
+        cmd.Parameters.AddWithValue(analysisId);
+        return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
     public async Task<int> CountChunksAsync(Guid analysisId, CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand("select count(*) from chunks where analysis_id = $1");

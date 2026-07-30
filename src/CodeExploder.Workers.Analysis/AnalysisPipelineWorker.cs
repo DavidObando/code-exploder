@@ -31,7 +31,10 @@ public sealed class AnalysisPipelineWorker(
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     private readonly string _workerId = $"worker-analysis:{Environment.MachineName}:{Environment.ProcessId}";
-    private readonly string _workspacesRoot = config["Workspaces:Root"] ?? "./workspaces";
+    // Default outside the source tree: a cwd-relative default once left a cloned repo
+    // inside a project directory, where its sources glob-compiled into the build.
+    private readonly string _workspacesRoot = config["Workspaces:Root"]
+        ?? Path.Combine(Path.GetTempPath(), "code-exploder", "workspaces");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -236,12 +239,31 @@ public sealed class AnalysisPipelineWorker(
         await analyses.SavePlanAsync(p.AnalysisId, JsonSerializer.Serialize(new { summary }, JsonOpts), ct);
         Stage(p, AnalysisStages.Plan, StageState.Done);
 
-        Stage(p, AnalysisStages.Finalize, StageState.Active);
-        await sessions.SetAnalysisStatusAsync(p.AnalysisId, AnalysisStatus.Ready, finished: true, ct: ct);
-        await sessions.SetSessionStatusAsync(p.SessionId, SessionStatus.Ready, ct: ct);
-        Stage(p, AnalysisStages.Finalize, StageState.Done);
-        Narrate(p, "Deterministic analysis complete. Tutorial generation arrives in M2.");
-        bus.Publish(p.SessionId, SessionEventKinds.AnalysisCompleted, new { });
+        // Hand off to the gpu-gen lane: S4 fan-out joined by S5 (docs/01 §1.2). The
+        // stored component rows carry ids; the LLM worker re-derives file membership
+        // deterministically from the repo map.
+        var stored = await analyses.GetComponentsAsync(p.AnalysisId, ct);
+        Stage(p, AnalysisStages.Summarize, StageState.Active);
+        Narrate(p, $"Handing off to the expert: summarizing {stored.Count} component(s)…");
+
+        var synthesizeId = await queue.EnqueueBlockedAsync(
+            LlmJobTypes.Synthesize, JsonSerializer.Serialize(p, JsonOpts), stored.Count,
+            analysisId: p.AnalysisId, ct: ct);
+        foreach (var (componentId, componentName) in stored)
+        {
+            await queue.EnqueueAsync(
+                LlmJobTypes.SummarizeComponent,
+                JsonSerializer.Serialize(new
+                {
+                    analysisId = p.AnalysisId,
+                    sessionId = p.SessionId,
+                    componentId,
+                    componentName,
+                }, JsonOpts),
+                analysisId: p.AnalysisId,
+                unblocksJobId: synthesizeId,
+                ct: ct);
+        }
     }
 
     private async Task<RepoMap> LoadRepoMapAsync(Guid analysisId, CancellationToken ct) =>

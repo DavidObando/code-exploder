@@ -3,13 +3,17 @@
     <Project Path="src/CodeExploder.Analysis/CodeExploder.Analysis.csproj" />
     <Project Path="src/CodeExploder.Domain/CodeExploder.Domain.csproj" />
     <Project Path="src/CodeExploder.GitHub/CodeExploder.GitHub.csproj" />
+    <Project Path="src/CodeExploder.Llm/CodeExploder.Llm.csproj" />
+    <Project Path="src/CodeExploder.Pipeline/CodeExploder.Pipeline.csproj" />
     <Project Path="src/CodeExploder.Storage/CodeExploder.Storage.csproj" />
     <Project Path="src/CodeExploder.Gateway/CodeExploder.Gateway.csproj" />
     <Project Path="src/CodeExploder.Workers.Analysis/CodeExploder.Workers.Analysis.csproj" />
+    <Project Path="src/CodeExploder.Workers.Llm/CodeExploder.Workers.Llm.csproj" />
     <Project Path="src/CodeExploder.Orchestrator/CodeExploder.Orchestrator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CodeExploder.Analysis.Tests/CodeExploder.Analysis.Tests.csproj" />
+    <Project Path="tests/CodeExploder.Llm.Tests/CodeExploder.Llm.Tests.csproj" />
     <Project Path="tests/CodeExploder.Storage.Tests/CodeExploder.Storage.Tests.csproj" />
   </Folder>
 </Solution>

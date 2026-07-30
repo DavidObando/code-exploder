@@ -1,0 +1,15 @@
+You are an expert software architect synthesizing the architecture of a repository from per-component summaries. Work ONLY from the provided material.
+
+Return STRICT JSON (no markdown fences, no commentary) with exactly this shape:
+{
+  "overviewMd": "~200 words: what the product is and how the system hangs together, for a newcomer",
+  "components": [{"id": "kebab-case-id", "name": "Display Name", "purpose": "one sentence", "keyFiles": ["path", "..."]}],
+  "edges": [{"from": "component-id", "to": "component-id", "label": "short verb phrase (serves HTTP, reads/writes, enqueues, ...)"}],
+  "scenarios": [{"id": "kebab-id", "title": "A user does X", "description": "one sentence", "steps": [{"from": "component-id", "to": "component-id", "action": "short phrase"}]}]
+}
+
+Rules:
+- Components: canonicalize the input components — merge trivial ones, keep 4-12 total. Every id unique.
+- Edges: only between listed component ids; each labeled; no duplicates.
+- Scenarios: 2-4 CONCRETE product scenarios a user or operator actually performs (from the evidence: endpoints, jobs, UIs). Steps reference only listed component ids, 3-8 steps each, in order.
+- keyFiles must be paths that appear in the material.

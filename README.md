@@ -20,13 +20,20 @@ local Ollama endpoint. Inference is queued so a single shared GPU is never overw
 
 ## Status
 
-**M1 (deterministic analysis) complete**: paste a public GitHub repo (or PR) URL and
-the pipeline really clones it (shallow, size-guarded), maps the repository —
-languages, build systems, entry points, CI configs, git churn — chunks it into
-FTS-indexed retrieval chunks, detects components, and presents live fact-based
-narration plus a repository-vitals card (language bar, components, churn) when ready.
-No LLM yet: tutorial generation arrives in M2. Milestones M0–M8 are described in
+**M2 (tutorial generation) complete**: paste a public GitHub repo (or PR) URL and the
+pipeline clones and deterministically maps it (M1), then a locally hosted LLM
+generates the full tutorial experience — component summaries fan out into an
+architecture synthesis, then sections publish progressively: an intro, an
+architecture tour and product-scenario walkthroughs with **progressively revealed
+whiteboard diagrams** (the LLM emits validated JSON specs; Mermaid is rendered
+deterministically), verified file/line code citations, and a build/test/release
+section — consumed self-paced with per-section progress tracking. Quizzes arrive in
+M3, the Q&A expert in M4. Milestones M0–M8 are described in
 [docs/08](docs/08-milestones-and-risks.md).
+
+The LLM defaults to `qwen3-coder:oc` via an OpenAI-compatible endpoint
+(`Llm__BaseUrl`, default `http://localhost:11434/v1`); the embedding/generation
+GPU-co-residency budget is documented in [docs/06](docs/06-llm-strategy.md).
 
 ### Dev quickstart
 

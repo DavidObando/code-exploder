@@ -126,6 +126,7 @@ app.MapOpenApi().AllowAnonymous();
 app.MapHub<CodeExploder.Gateway.Hubs.SessionHub>("/hubs/session").RequireAuthorization();
 
 SessionEndpoints.Map(app);
+ExperienceEndpoints.Map(app);
 SystemEndpoints.Map(app);
 
 // Unknown API routes must 404 rather than fall through to the SPA's index.html.

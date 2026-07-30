@@ -9,10 +9,21 @@ include custom wide-context variants maintained as IaC in the HomeInfra repo:
 `qwen3.6:oc` (27B, 128k, ~21 GB), `gemma4:oc` (256k). The embedding model
 (`nomic-embed-text`, 768-dim, ~270 MB) is added to the same IaC and stays resident.
 
+## Measured co-residency (validated 2026-07-30)
+
+Empirical test on the target GPU: `qwen3-coder:oc` loads at **20.78 GiB** (the 70k
+context's KV cache inflates it beyond its 18.6 GiB file size) and stays 100 %
+VRAM-resident; `nomic-embed-text` cohabits in the remaining headroom (total
+**20.87 / 24.00 GiB**, embedder in a partial CPU split that doesn't matter — warm
+embeds ~0.10 s). Interleaved generate/embed is stable: warm generates ~0.35 s, no
+eviction across rounds. Caveat: only ~3 GiB spare — any third large model forces an
+eviction, so the single-generation-model-per-run rule is load-bearing.
+
 ## Model selection (decided once per run, at plan time)
 
 - **Default: `qwen3-coder:oc`** — strongest at code; every prompt in the plan is
-  packed ≤ 55k so 70k context suffices; fits 24 GB alongside the embedder.
+  packed ≤ 55k so 70k context suffices; fits 24 GB alongside the embedder (measured
+  above).
 - **Escalate to `qwen3.6:oc`** only when the planner predicts the S5 synthesis input
   cannot fit 70k even after summary compression (> ~45 components).
 - **`gpt-oss:oc`** is the quick/degraded mode: smaller resident footprint plays nicer

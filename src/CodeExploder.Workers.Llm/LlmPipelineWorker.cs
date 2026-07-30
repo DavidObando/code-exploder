@@ -1,0 +1,352 @@
+using System.Text.Json;
+using CodeExploder.Analysis;
+using CodeExploder.Domain;
+using CodeExploder.Llm;
+using CodeExploder.Pipeline;
+using CodeExploder.Storage;
+
+namespace CodeExploder.Workers.Llm;
+
+/// <summary>
+/// The gpu-gen lane (docs/02 §lanes): one poller, concurrency 1, running the LLM
+/// stages S4–S6 with progressive publish. Failure policy per job type: a dead
+/// component summary leaves a gap (the join proceeds); a dead section marks that
+/// section failed and the run ends 'partial'; a dead synthesize fails the run.
+/// </summary>
+public sealed class LlmPipelineWorker(
+    JobQueue queue,
+    SessionStore sessions,
+    AnalysisStore analyses,
+    ExperienceStore experiences,
+    ISessionEventBus bus,
+    ILlmClient llm,
+    LlmReadinessGate gate,
+    LlmOptions llmOptions,
+    IConfiguration config,
+    ILoggerFactory loggerFactory,
+    ILogger<LlmPipelineWorker> logger) : BackgroundService
+{
+    private static readonly string[] JobTypes =
+        [LlmJobTypes.SummarizeComponent, LlmJobTypes.Synthesize, LlmJobTypes.TutorialSection, LlmJobTypes.FinalizeExperience];
+
+    private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan NotReadyDelay = TimeSpan.FromSeconds(15);
+    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+
+    private readonly string _workerId = $"worker-llm:{Environment.MachineName}:{Environment.ProcessId}";
+    // Must match the analysis worker's default (shared checkout + repomap artifacts).
+    private readonly string _workspacesRoot = config["Workspaces:Root"]
+        ?? Path.Combine(Path.GetTempPath(), "code-exploder", "workspaces");
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        logger.LogInformation("{WorkerId} polling for job types: {JobTypes} (model {Model})",
+            _workerId, string.Join(", ", JobTypes), llmOptions.Model);
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            QueuedJob? job = null;
+            try
+            {
+                // Readiness gate: park all LLM work while Ollama is unreachable rather
+                // than burning retries (docs/06).
+                if (!await gate.IsReadyAsync(stoppingToken))
+                {
+                    logger.LogWarning("LLM endpoint not ready; parking for {Delay}s", NotReadyDelay.TotalSeconds);
+                    await Task.Delay(NotReadyDelay, stoppingToken);
+                    continue;
+                }
+
+                job = await queue.TryDequeueAsync(JobTypes, _workerId, stoppingToken);
+                if (job is null)
+                {
+                    await Task.Delay(IdleDelay, stoppingToken);
+                    continue;
+                }
+
+                await HandleAsync(job, stoppingToken);
+                await queue.CompleteAsync(job.Id, stoppingToken);
+                logger.LogInformation("Job {JobId} ({JobType}) completed", job.Id, job.JobType);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Job {JobId} ({JobType}) failed", job?.Id, job?.JobType);
+                if (job is not null)
+                {
+                    await queue.FailAsync(job.Id, ex.Message, CancellationToken.None);
+                    if (job.Attempts >= job.MaxAttempts)
+                    {
+                        await HandleTerminalFailureAsync(job, ex.Message);
+                    }
+                }
+            }
+        }
+    }
+
+    private async Task HandleAsync(QueuedJob job, CancellationToken ct)
+    {
+        var p = JsonSerializer.Deserialize<Payload>(job.PayloadJson, JsonOpts)!;
+        switch (job.JobType)
+        {
+            case LlmJobTypes.SummarizeComponent:
+                await RunSummarizeAsync(p, ct);
+                break;
+            case LlmJobTypes.Synthesize:
+                await RunSynthesizeAsync(p, ct);
+                break;
+            case LlmJobTypes.TutorialSection:
+                await RunSectionAsync(p, ct);
+                break;
+            case LlmJobTypes.FinalizeExperience:
+                await RunFinalizeAsync(p, ct);
+                break;
+            default:
+                throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
+        }
+    }
+
+    private async Task RunSummarizeAsync(Payload p, CancellationToken ct)
+    {
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var components = new ComponentDetector().Detect(map);
+        var component = components.FirstOrDefault(c => c.Name == p.ComponentName)
+            ?? throw new InvalidOperationException($"Component not found in map: {p.ComponentName}");
+
+        var material = ContextPacker.ForComponent(
+            CheckoutPath(p.AnalysisId), map, component, components.Select(c => c.Name).ToList());
+        var knownFiles = map.Files.Where(f => !f.Excluded).Select(f => f.Path).ToHashSet(StringComparer.Ordinal);
+        var componentNames = components.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
+
+        var summarizer = new ComponentSummarizer(llm, LoggerFor<ComponentSummarizer>());
+        var result = await summarizer.SummarizeAsync(material, knownFiles, componentNames, ct);
+
+        await analyses.InsertSummaryAsync(
+            p.AnalysisId, "component", p.ComponentId, result.ProseMd, result.StructuredJson,
+            llmOptions.Model, PromptLibrary.ComponentSummary, ct);
+
+        var done = await analyses.CountComponentSummariesAsync(p.AnalysisId, ct);
+        Narrate(p, $"Summarized component: {p.ComponentName}");
+        Progress(p, AnalysisStages.Summarize, done * 100.0 / Math.Max(1, components.Count), $"{done}/{components.Count} components");
+    }
+
+    private async Task RunSynthesizeAsync(Payload p, CancellationToken ct)
+    {
+        Stage(p, AnalysisStages.Summarize, StageState.Done);
+        Stage(p, AnalysisStages.Synthesize, StageState.Active);
+
+        var repoSummary = await LoadRepoSummaryAsync(p.AnalysisId, ct);
+        var summaries = await analyses.GetComponentSummariesAsync(p.AnalysisId, ct);
+        if (summaries.Count == 0)
+        {
+            throw new InvalidOperationException("No component summaries succeeded; cannot synthesize.");
+        }
+
+        var synthesizer = new ArchitectureSynthesizer(llm, LoggerFor<ArchitectureSynthesizer>());
+        var architecture = await synthesizer.SynthesizeAsync(
+            ContextPacker.ForArchitecture(repoSummary, summaries), ct);
+
+        await analyses.InsertSummaryAsync(
+            p.AnalysisId, "repo", null, architecture.OverviewMd,
+            JsonSerializer.Serialize(architecture, JsonOpts), llmOptions.Model, PromptLibrary.Architecture, ct);
+        Narrate(p, $"Architecture synthesized: {architecture.Components.Count} components, "
+            + $"{architecture.Edges.Count} relationships, {architecture.Scenarios.Count} scenarios");
+
+        // Plan the tutorial outline and publish the TOC (sections start pending).
+        var commitSha = await analyses.GetCommitShaAsync(p.AnalysisId, ct) ?? "unknown";
+        var experienceId = await experiences.CreateExperienceAsync(p.SessionId, commitSha, llmOptions.Model, ct);
+
+        var outline = new List<(string Slug, string Kind, string Title, string? ScenarioId)>
+        {
+            ("intro", SectionKind.Intro, "What this is", null),
+            ("architecture", SectionKind.Architecture, "Architecture tour", null),
+        };
+        foreach (var scenario in architecture.Scenarios.Take(3))
+        {
+            outline.Add(($"scenario-{Slugify(scenario.Id)}", SectionKind.Scenario, scenario.Title, scenario.Id));
+        }
+
+        outline.Add(("build-test-release", SectionKind.Build, "Build, test & release", null));
+
+        var sectionJobs = new List<Payload>();
+        for (var ord = 0; ord < outline.Count; ord++)
+        {
+            var (slug, kind, title, scenarioId) = outline[ord];
+            var sectionId = await experiences.CreateSectionAsync(experienceId, ord, slug, kind, title, "", ct);
+            sectionJobs.Add(p with
+            {
+                ExperienceId = experienceId,
+                SectionId = sectionId,
+                Kind = kind,
+                ScenarioId = scenarioId,
+                Ordinal = ord,
+                Slug = slug,
+                Title = title,
+            });
+        }
+
+        await sessions.SetSectionsTotalAsync(p.AnalysisId, outline.Count, ct);
+        Stage(p, AnalysisStages.Synthesize, StageState.Done);
+        Stage(p, AnalysisStages.Sections, StageState.Active);
+        Narrate(p, $"Planned {outline.Count} tutorial sections; writing…");
+
+        var finalizeId = await queue.EnqueueBlockedAsync(
+            LlmJobTypes.FinalizeExperience,
+            JsonSerializer.Serialize(p with { ExperienceId = experienceId }, JsonOpts),
+            outline.Count, analysisId: p.AnalysisId, ct: ct);
+        foreach (var sectionJob in sectionJobs)
+        {
+            await queue.EnqueueAsync(
+                LlmJobTypes.TutorialSection, JsonSerializer.Serialize(sectionJob, JsonOpts),
+                analysisId: p.AnalysisId, unblocksJobId: finalizeId, ct: ct);
+        }
+    }
+
+    private async Task RunSectionAsync(Payload p, CancellationToken ct)
+    {
+        await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Generating, ct);
+        Narrate(p, $"Writing section: {p.Title}");
+
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var repoSummary = await LoadRepoSummaryAsync(p.AnalysisId, ct);
+        var architecture = JsonSerializer.Deserialize<ArchitectureDoc>(
+            await analyses.GetRepoSummaryStructuredAsync(p.AnalysisId, ct)
+                ?? throw new InvalidOperationException("architecture doc missing"),
+            JsonOpts)!;
+        var summaries = await analyses.GetComponentSummariesAsync(p.AnalysisId, ct);
+        var scenario = p.ScenarioId is null
+            ? null
+            : architecture.Scenarios.FirstOrDefault(s => s.Id == p.ScenarioId);
+
+        // Diagram-bearing kinds get their spec first; a failed diagram degrades to a
+        // text-only section rather than failing it (docs/05 §validity guardrail).
+        DiagramSpecGenerator.Result? diagram = null;
+        if (p.Kind is SectionKind.Architecture or SectionKind.Scenario)
+        {
+            try
+            {
+                var generator = new DiagramSpecGenerator(llm, LoggerFor<DiagramSpecGenerator>());
+                diagram = await generator.GenerateAsync(
+                    p.Kind == SectionKind.Architecture ? "flowchart" : "sequence",
+                    architecture, scenario, ct);
+            }
+            catch (GenerationException ex)
+            {
+                logger.LogWarning(ex, "Diagram generation failed for {Slug}; continuing text-only", p.Slug);
+                Narrate(p, $"Diagram for “{p.Title}” didn't validate; continuing without it");
+            }
+        }
+
+        var material = ContextPacker.ForSection(
+            CheckoutPath(p.AnalysisId), map, repoSummary, architecture, p.Kind!, scenario, diagram?.Spec, summaries);
+        var sectionGenerator = new SectionGenerator(llm, LoggerFor<SectionGenerator>());
+        var result = await sectionGenerator.GenerateAsync(
+            p.Title!, material, CheckoutPath(p.AnalysisId), map, diagram, ct);
+
+        await experiences.CompleteSectionAsync(
+            p.SectionId.Value, result.SummaryLine, result.EstimatedMinutes, result.Blocks, ct);
+
+        var (ready, total) = await sessions.IncrementSectionsReadyAsync(p.AnalysisId, ct);
+        bus.Publish(p.SessionId, SessionEventKinds.SectionReady,
+            new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal });
+        Progress(p, AnalysisStages.Sections, total == 0 ? 100 : ready * 100.0 / total, $"{ready}/{total} sections");
+    }
+
+    private async Task RunFinalizeAsync(Payload p, CancellationToken ct)
+    {
+        var unready = await experiences.CountUnreadySectionsAsync(p.ExperienceId!.Value, ct);
+        Stage(p, AnalysisStages.Sections, StageState.Done);
+        Stage(p, AnalysisStages.Finalize, StageState.Active);
+
+        if (unready > 0)
+        {
+            await sessions.SetAnalysisStatusAsync(p.AnalysisId, AnalysisStatus.ReadyWithWarnings, finished: true, ct: ct);
+            await sessions.SetSessionStatusAsync(p.SessionId, SessionStatus.Partial, ct: ct);
+            Narrate(p, $"Tutorial ready with {unready} section(s) unavailable.");
+        }
+        else
+        {
+            await sessions.SetAnalysisStatusAsync(p.AnalysisId, AnalysisStatus.Ready, finished: true, ct: ct);
+            await sessions.SetSessionStatusAsync(p.SessionId, SessionStatus.Ready, ct: ct);
+            Narrate(p, "Tutorial ready. Enjoy the tour!");
+        }
+
+        Stage(p, AnalysisStages.Finalize, StageState.Done);
+        bus.Publish(p.SessionId, SessionEventKinds.AnalysisCompleted, new { });
+    }
+
+    private async Task HandleTerminalFailureAsync(QueuedJob job, string reason)
+    {
+        try
+        {
+            var p = JsonSerializer.Deserialize<Payload>(job.PayloadJson, JsonOpts)!;
+            switch (job.JobType)
+            {
+                case LlmJobTypes.SummarizeComponent:
+                    // Gap tolerated: the synthesize join proceeds with what succeeded.
+                    Narrate(p, $"Couldn't summarize component {p.ComponentName}; continuing without it");
+                    break;
+                case LlmJobTypes.TutorialSection:
+                    await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Failed);
+                    Narrate(p, $"Section “{p.Title}” failed to generate");
+                    break;
+                default:
+                    await sessions.SetAnalysisStatusAsync(p.AnalysisId, AnalysisStatus.Failed, reason, finished: true);
+                    await sessions.SetSessionStatusAsync(p.SessionId, SessionStatus.Failed, reason);
+                    bus.Publish(p.SessionId, SessionEventKinds.AnalysisFailed, new { reason });
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to handle terminal failure for job {JobId}", job.Id);
+        }
+    }
+
+    private async Task<RepoMap> LoadRepoMapAsync(Guid analysisId, CancellationToken ct) =>
+        JsonSerializer.Deserialize<RepoMap>(
+            await File.ReadAllTextAsync(Path.Combine(_workspacesRoot, analysisId.ToString(), "repomap.json"), ct),
+            JsonOpts) ?? throw new InvalidOperationException("repo map artifact missing");
+
+    private async Task<RepoSummary> LoadRepoSummaryAsync(Guid analysisId, CancellationToken ct)
+    {
+        var planJson = await analyses.GetPlanAsync(analysisId, ct)
+            ?? throw new InvalidOperationException("analysis plan missing");
+        return JsonSerializer.Deserialize<PlanDocument>(planJson, JsonOpts)?.Summary
+            ?? throw new InvalidOperationException("repo summary missing from plan");
+    }
+
+    private string CheckoutPath(Guid analysisId) =>
+        Path.Combine(_workspacesRoot, analysisId.ToString(), "repo");
+
+    private void Stage(Payload p, string stage, string state) =>
+        bus.Publish(p.SessionId, SessionEventKinds.AnalysisStageChanged, new { stage, state });
+
+    private void Progress(Payload p, string stage, double percent, string? detail = null) =>
+        bus.Publish(p.SessionId, SessionEventKinds.AnalysisProgress, new { stage, percent, detail });
+
+    private void Narrate(Payload p, string text) =>
+        bus.Publish(p.SessionId, SessionEventKinds.AnalysisNarration, new { text });
+
+    private ILogger<T> LoggerFor<T>() => loggerFactory.CreateLogger<T>();
+
+    private sealed record PlanDocument(RepoSummary? Summary);
+
+    private sealed record Payload(
+        Guid AnalysisId,
+        Guid SessionId,
+        Guid? ComponentId = null,
+        string? ComponentName = null,
+        Guid? ExperienceId = null,
+        Guid? SectionId = null,
+        string? Kind = null,
+        string? ScenarioId = null,
+        int? Ordinal = null,
+        string? Slug = null,
+        string? Title = null);
+
+    private static string Slugify(string input) =>
+        new(input.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());
+}

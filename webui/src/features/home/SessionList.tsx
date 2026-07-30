@@ -26,7 +26,7 @@ function SessionRow({ session, onDelete }: { session: SessionSummary; onDelete: 
   const percent = showBar ? Math.round((completedSections / totalSections) * 100) : 0;
 
   return (
-    <Link to={`/sessions/${session.id}/progress`} className={styles.sessionRow}>
+    <Link to={`/sessions/${session.id}`} className={styles.sessionRow}>
       <div className={styles.sessionHead}>
         <span className={styles.sessionGlyph} style={{ color }} aria-label={session.status}>
           {glyph}
@@ -35,6 +35,9 @@ function SessionRow({ session, onDelete }: { session: SessionSummary; onDelete: 
       </div>
       <div className={styles.sessionMeta}>
         {session.status} · {relativeTime(session.createdAt)}
+        {session.status === 'analyzing' && totalSections > 0 && (
+          <> · writing sections ({totalSections} planned)</>
+        )}
       </div>
       {showBar && (
         <div className={styles.miniTrack} aria-hidden="true">

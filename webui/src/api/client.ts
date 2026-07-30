@@ -2,8 +2,12 @@ import type {
   AnalysisSnapshot,
   AppConfig,
   CreateSessionRequest,
+  ExperienceToc,
   Health,
   Me,
+  SectionDetail,
+  SectionProgressResponse,
+  SectionUserState,
   SessionSummary,
   SystemStatus,
 } from './types';
@@ -52,4 +56,14 @@ export const api = {
     request<void>(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   getAnalysis: (id: string) =>
     request<AnalysisSnapshot>(`/api/sessions/${encodeURIComponent(id)}/analysis`),
+  /** 404 (ApiError) while the analysis hasn't planned sections yet. */
+  getExperience: (sessionId: string) =>
+    request<ExperienceToc>(`/api/sessions/${encodeURIComponent(sessionId)}/experience`),
+  getSection: (sectionId: string) =>
+    request<SectionDetail>(`/api/sections/${encodeURIComponent(sectionId)}`),
+  setSectionProgress: (sectionId: string, state: SectionUserState) =>
+    request<SectionProgressResponse>(
+      `/api/sections/${encodeURIComponent(sectionId)}/progress`,
+      { method: 'PUT', body: JSON.stringify({ state }) },
+    ),
 };
