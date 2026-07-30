@@ -59,6 +59,28 @@ public sealed class GitCli(ILogger<GitCli> logger)
         return new CloneResult(sha);
     }
 
+    /// <summary>
+    /// Unified diff of the PR head against its merge-base with the default branch
+    /// (falls back to the branch tip when the shallow history lacks the merge-base).
+    /// </summary>
+    public async Task<string> DiffPrAsync(string workspacePath, CancellationToken ct)
+    {
+        var defaultRef = (await RunAsync(workspacePath, ["rev-parse", "--abbrev-ref", "origin/HEAD"], ct)).Trim();
+        string baseRef;
+        try
+        {
+            baseRef = (await RunAsync(workspacePath, ["merge-base", defaultRef, "HEAD"], ct)).Trim();
+        }
+        catch (AcquireException)
+        {
+            // Shallow clone may not contain the merge-base; branch-tip diff includes
+            // upstream drift noise but stays correct for the PR's own hunks.
+            baseRef = defaultRef;
+        }
+
+        return await RunAsync(workspacePath, ["diff", "--no-color", "-M", $"{baseRef}..HEAD"], ct);
+    }
+
     /// <summary>Commit/contributor counts and per-file churn over the shallow history window.</summary>
     public async Task<GitStats> CollectStatsAsync(string workspacePath, CancellationToken ct)
     {

@@ -30,7 +30,7 @@ The core product (M0–M4) works end-to-end today. Full descriptions in
 | ✅ | **M2 — Tutorial generation** | Component summaries → architecture synthesis → progressively published sections with staged-reveal whiteboard diagrams and verified code citations |
 | ✅ | **M3 — Quizzes** | Per-section checks: auto-graded questions + one LLM-graded short answer (binary key-point coverage; ungradable ≠ wrong), retakes, ≥75 % auto-completes |
 | ✅ | **M4 — Q&A virtual expert** | pgvector knowledge base, vector+FTS+trigram retrieval with RRF fusion, token-streamed answers with peekable file/line citations |
-| ⬜ | **M5 — PR-diff explainer** | Paste a PR URL: incremental analysis, overlay diagrams badging changed nodes, review-order walkthrough |
+| ✅ | **M5 — PR-diff explainer** | Paste a PR URL: deterministic diff map, summaries scoped to touched components, change-badged architecture diagram, bottom-up walkthroughs with diff hunks, risk notes |
 | 🔄 | **M6 — Deploy + hardening** | Home-infrastructure deployment (Traefik ingress, SOPS secrets, published images), production auth gate, retention |
 | ⬜ | **M7 — Seeded demo report** | A pre-baked analysis bundle installed as a ready session for product review; doubles as analysis backup/restore |
 | ⬜ | **M8 — MCP server** | The knowledge base as MCP tools (stdio + streamable HTTP) for agents and IDEs: search, summaries, sections, ask-expert |

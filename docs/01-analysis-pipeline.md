@@ -211,3 +211,12 @@ Typical incremental PR: **5–15 LLM calls — minutes, not an hour.**
 **Cold path** (no base analysis): run a *lite* base pass first — S0–S3 for the whole
 repo, S4 only for touched components plus their 1-hop neighbors in the component
 graph, S5 marked "partial" — then the PR plan.
+
+> **Implementation status (M5)**: the shipped PR mode always runs the scoped cold
+> path — S0–S3 on the head tree, S4 for touched components only (capped at 8 by
+> changed volume; the 1-hop-neighbor expansion is not yet implemented), then the PR
+> outline (overview with a deterministically change-badged architecture diagram →
+> walkthroughs ordered bottom-up with injected diff hunks → risks) and one quiz on
+> the overview. Cross-session incremental reuse of a prior base analysis (staleness
+> rules, diagram overlay against the base spec, layered Q&A retrieval) remains
+> future work.

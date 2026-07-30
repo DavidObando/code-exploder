@@ -50,6 +50,36 @@ public sealed class GitHubApiClient(HttpClient http, ILogger<GitHubApiClient> lo
         }
     }
 
+    public sealed record GitHubPrInfo(string? Title, string? Body, string BaseRef);
+
+    /// <summary>Best-effort PR metadata for the narrative stages; null degrades gracefully.</summary>
+    public async Task<GitHubPrInfo?> GetPullRequestAsync(
+        string owner, string name, int number, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.GetAsync(
+                new Uri($"repos/{owner}/{name}/pulls/{number}", UriKind.Relative), ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+            return new GitHubPrInfo(
+                json.TryGetProperty("title", out var t) ? t.GetString() : null,
+                json.TryGetProperty("body", out var b) ? b.GetString() : null,
+                json.TryGetProperty("base", out var bs) && bs.TryGetProperty("ref", out var r)
+                    ? r.GetString() ?? "main"
+                    : "main");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            logger.LogInformation(ex, "GitHub PR lookup failed for {Owner}/{Name}#{Number}", owner, name, number);
+            return null;
+        }
+    }
+
     public static HttpClient CreateHttpClient()
     {
         var client = new HttpClient

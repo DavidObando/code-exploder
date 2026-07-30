@@ -134,6 +134,22 @@
   user-select: none;
 }
 
+/* Unified-diff tints (language === 'Diff') — very low alpha, token-derived. */
+.codeLineAdded {
+  composes: codeLine;
+  background: color-mix(in srgb, var(--keep) 12%, transparent);
+}
+
+.codeLineRemoved {
+  composes: codeLine;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+}
+
+.codeLineHunk {
+  composes: codeLine;
+  color: var(--text-muted);
+}
+
 .codeCaption {
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border);

@@ -85,7 +85,14 @@ export interface AnalysisSnapshot {
 
 // --- Tutorial experience (M2) ---
 
-export type SectionKind = 'intro' | 'architecture' | 'scenario' | 'build';
+export type SectionKind =
+  | 'intro'
+  | 'architecture'
+  | 'scenario'
+  | 'build'
+  | 'pr-overview'
+  | 'pr-walkthrough'
+  | 'pr-risk';
 export type SectionStatus = 'pending' | 'generating' | 'ready' | 'failed';
 export type SectionUserState = 'unread' | 'read' | 'skipped' | 'completed';
 

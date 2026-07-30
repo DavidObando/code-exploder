@@ -154,6 +154,72 @@ public static class ContextPacker
         return pack.ToString();
     }
 
+    /// <summary>Material for the PR-mode section kinds (docs/01 §PR-diff mode).</summary>
+    public static string ForPrSection(
+        RepoSummary repoSummary,
+        ArchitectureDoc architecture,
+        string kind,
+        string? componentName,
+        PrDiff prDiff,
+        IReadOnlyList<(string Component, string ProseMd, string? StructuredJson)> summaries)
+    {
+        var pack = new PackBuilder(SectionPackChars);
+        pack.TryAdd("Pull request", $"#{prDiff.PrNumber}: {prDiff.Title ?? "(no title)"}\n"
+            + $"Base: {prDiff.BaseRef} | {prDiff.Files.Count} file(s), +{prDiff.TotalAdditions}/−{prDiff.TotalDeletions}\n"
+            + (string.IsNullOrWhiteSpace(prDiff.Body) ? "" : "\n" + Truncate(prDiff.Body!, 2_000)));
+        pack.TryAdd("Architecture overview", architecture.OverviewMd);
+
+        switch (kind)
+        {
+            case PrSectionKind.Overview:
+                pack.TryAdd("Changed files", string.Join("\n", prDiff.Files.Take(25).Select(f =>
+                    $"- {f.Path} ({f.ChangeKind}, +{f.Additions}/−{f.Deletions}{(f.IsTest ? ", test" : "")})")));
+                pack.TryAdd("Touched components", string.Join(", ", prDiff.TouchedComponents));
+                break;
+
+            case PrSectionKind.Walkthrough when componentName is not null:
+                var files = prDiff.Files.Where(f => f.Component == componentName).ToList();
+                if (summaries.FirstOrDefault(s => s.Component == componentName) is { ProseMd.Length: > 0 } summary)
+                {
+                    pack.TryAdd($"Component: {componentName}", summary.ProseMd);
+                }
+
+                foreach (var file in files.OrderByDescending(f => f.Additions + f.Deletions).Take(5))
+                {
+                    pack.TryAdd($"Diff: {file.Path} ({file.ChangeKind}, +{file.Additions}/−{file.Deletions})",
+                        string.Join("\n\n", file.Hunks.Select(h => h.Text))
+                        + (file.HunksTruncated ? "\n…[more hunks omitted]" : ""));
+                }
+
+                break;
+
+            case PrSectionKind.Risk:
+                var changedTestComponents = prDiff.Files.Where(f => f.IsTest && f.Component is not null)
+                    .Select(f => f.Component!).ToHashSet(StringComparer.Ordinal);
+                var untested = prDiff.Files
+                    .Where(f => !f.IsTest && f.Component is not null && !changedTestComponents.Contains(f.Component!))
+                    .Select(f => f.Path).Take(15).ToList();
+                pack.TryAdd("Prod files changed in components with NO test changes",
+                    untested.Count > 0 ? string.Join("\n", untested) : "(none — every touched component has test changes)");
+                pack.TryAdd("Deleted files", string.Join("\n",
+                    prDiff.Files.Where(f => f.ChangeKind == "deleted").Select(f => f.Path).DefaultIfEmpty("(none)")));
+                foreach (var file in prDiff.Files.OrderByDescending(f => f.Additions + f.Deletions).Take(2))
+                {
+                    pack.TryAdd($"Largest change: {file.Path}",
+                        string.Join("\n\n", file.Hunks.Take(2).Select(h => h.Text)));
+                }
+
+                break;
+
+            default:
+                break;
+        }
+
+        return pack.ToString();
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+
     private static string? FindReadme(RepoMap map) =>
         map.Files.FirstOrDefault(f => !f.Excluded
             && f.Path.Equals("README.md", StringComparison.OrdinalIgnoreCase))?.Path

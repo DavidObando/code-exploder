@@ -173,22 +173,46 @@ public sealed class LlmPipelineWorker(
         var commitSha = await analyses.GetCommitShaAsync(p.AnalysisId, ct) ?? "unknown";
         var experienceId = await experiences.CreateExperienceAsync(p.SessionId, commitSha, llmOptions.Model, ct);
 
-        var outline = new List<(string Slug, string Kind, string Title, string? ScenarioId)>
+        List<(string Slug, string Kind, string Title, string? ScenarioId, string? ComponentName)> outline;
+        var prDiff = await TryLoadPrDiffAsync(p.AnalysisId, ct);
+        if (prDiff is not null)
         {
-            ("intro", SectionKind.Intro, "What this is", null),
-            ("architecture", SectionKind.Architecture, "Architecture tour", null),
-        };
-        foreach (var scenario in architecture.Scenarios.Take(3))
-        {
-            outline.Add(($"scenario-{Slugify(scenario.Id)}", SectionKind.Scenario, scenario.Title, scenario.Id));
-        }
+            // PR outline (docs/01 §PR-diff mode): overview → walkthroughs ordered
+            // bottom-up so dependencies are reviewed before their dependents → risks.
+            var groups = PrSupport.OrderBottomUp(
+                prDiff.Files.Where(f => f.Component is not null)
+                    .GroupBy(f => f.Component!)
+                    .OrderByDescending(g => g.Sum(f => f.Additions + f.Deletions))
+                    .Take(4).Select(g => g.Key).ToList(),
+                architecture);
 
-        outline.Add(("build-test-release", SectionKind.Build, "Build, test & release", null));
+            outline = [("pr-overview", PrSectionKind.Overview, $"What PR #{prDiff.PrNumber} does", null, null)];
+            foreach (var group in groups)
+            {
+                outline.Add(($"pr-changes-{Slugify(group)}", PrSectionKind.Walkthrough, $"Changes in {group}", null, group));
+            }
+
+            outline.Add(("pr-risk", PrSectionKind.Risk, "Risks & review notes", null, null));
+        }
+        else
+        {
+            outline =
+            [
+                ("intro", SectionKind.Intro, "What this is", null, null),
+                ("architecture", SectionKind.Architecture, "Architecture tour", null, null),
+            ];
+            foreach (var scenario in architecture.Scenarios.Take(3))
+            {
+                outline.Add(($"scenario-{Slugify(scenario.Id)}", SectionKind.Scenario, scenario.Title, scenario.Id, null));
+            }
+
+            outline.Add(("build-test-release", SectionKind.Build, "Build, test & release", null, null));
+        }
 
         var sectionJobs = new List<Payload>();
         for (var ord = 0; ord < outline.Count; ord++)
         {
-            var (slug, kind, title, scenarioId) = outline[ord];
+            var (slug, kind, title, scenarioId, componentName) = outline[ord];
             var sectionId = await experiences.CreateSectionAsync(experienceId, ord, slug, kind, title, "", ct);
             sectionJobs.Add(p with
             {
@@ -196,6 +220,7 @@ public sealed class LlmPipelineWorker(
                 SectionId = sectionId,
                 Kind = kind,
                 ScenarioId = scenarioId,
+                ComponentName = componentName,
                 Ordinal = ord,
                 Slug = slug,
                 Title = title,
@@ -241,17 +266,29 @@ public sealed class LlmPipelineWorker(
             ? null
             : architecture.Scenarios.FirstOrDefault(s => s.Id == p.ScenarioId);
 
+        var prDiff = p.Kind is PrSectionKind.Overview or PrSectionKind.Walkthrough or PrSectionKind.Risk
+            ? await TryLoadPrDiffAsync(p.AnalysisId, ct)
+            : null;
+
         // Diagram-bearing kinds get their spec first; a failed diagram degrades to a
-        // text-only section rather than failing it (docs/05 §validity guardrail).
+        // text-only section rather than failing it (docs/05 §validity guardrail). The
+        // PR overview reuses the architecture flowchart with deterministic
+        // changed-component badging (docs/01 §PR-diff mode — overlay, no extra LLM).
         DiagramSpecGenerator.Result? diagram = null;
-        if (p.Kind is SectionKind.Architecture or SectionKind.Scenario)
+        if (p.Kind is SectionKind.Architecture or SectionKind.Scenario or PrSectionKind.Overview)
         {
             try
             {
                 var generator = new DiagramSpecGenerator(llm, LoggerFor<DiagramSpecGenerator>());
                 diagram = await generator.GenerateAsync(
-                    p.Kind == SectionKind.Architecture ? "flowchart" : "sequence",
+                    p.Kind == SectionKind.Scenario ? "sequence" : "flowchart",
                     architecture, scenario, ct);
+                if (prDiff is not null && diagram is not null)
+                {
+                    var badged = MermaidRenderer.Render(
+                        PrSupport.BadgeChangedComponents(diagram.Spec, prDiff.TouchedComponents));
+                    diagram = new DiagramSpecGenerator.Result(badged.NormalizedSpec, badged.Mermaid);
+                }
             }
             catch (GenerationException ex)
             {
@@ -260,14 +297,22 @@ public sealed class LlmPipelineWorker(
             }
         }
 
-        var material = ContextPacker.ForSection(
-            CheckoutPath(p.AnalysisId), map, repoSummary, architecture, p.Kind!, scenario, diagram?.Spec, summaries);
+        var material = prDiff is not null
+            ? ContextPacker.ForPrSection(repoSummary, architecture, p.Kind!, p.ComponentName, prDiff, summaries)
+            : ContextPacker.ForSection(
+                CheckoutPath(p.AnalysisId), map, repoSummary, architecture, p.Kind!, scenario, diagram?.Spec, summaries);
         var sectionGenerator = new SectionGenerator(llm, LoggerFor<SectionGenerator>());
         var result = await sectionGenerator.GenerateAsync(
             p.Title!, material, CheckoutPath(p.AnalysisId), map, diagram, ct);
 
+        var blocks = result.Blocks;
+        if (prDiff is not null && p.Kind == PrSectionKind.Walkthrough && p.ComponentName is not null)
+        {
+            blocks = InjectDiffBlocks(blocks, prDiff, p.ComponentName);
+        }
+
         await experiences.CompleteSectionAsync(
-            p.SectionId.Value, result.SummaryLine, result.EstimatedMinutes, result.Blocks, ct);
+            p.SectionId.Value, result.SummaryLine, result.EstimatedMinutes, blocks, ct);
 
         var (ready, total) = await sessions.IncrementSectionsReadyAsync(p.AnalysisId, ct);
         bus.Publish(p.SessionId, SessionEventKinds.SectionReady,
@@ -275,10 +320,14 @@ public sealed class LlmPipelineWorker(
         Progress(p, AnalysisStages.Sections, total == 0 ? 100 : ready * 100.0 / total, $"{ready}/{total} sections");
 
         // S7 rides behind the section, non-blocking: quizzes are enhancement, never a
-        // gate on tutorial readiness (docs/05 §Quizzes).
-        await queue.EnqueueAsync(
-            LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts),
-            analysisId: p.AnalysisId, ct: ct);
+        // gate on tutorial readiness (docs/05 §Quizzes). PR mode gets ONE quiz, on the
+        // overview (docs/01 §PR-diff mode).
+        if (p.Kind is not (PrSectionKind.Walkthrough or PrSectionKind.Risk))
+        {
+            await queue.EnqueueAsync(
+                LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts),
+                analysisId: p.AnalysisId, ct: ct);
+        }
         await queue.EnqueueAsync(
             LlmJobTypes.EmbedSection,
             JsonSerializer.Serialize(new { sectionId = p.SectionId }, JsonOpts),
@@ -394,6 +443,43 @@ public sealed class LlmPipelineWorker(
         {
             logger.LogError(ex, "Failed to handle terminal failure for job {JobId}", job.Id);
         }
+    }
+
+    /// <summary>Diff blocks land right after the section's opening paragraph.</summary>
+    private static List<(string Type, string DataJson)> InjectDiffBlocks(
+        IReadOnlyList<(string Type, string DataJson)> blocks, PrDiff prDiff, string componentName)
+    {
+        var diffBlocks = prDiff.Files
+            .Where(f => f.Component == componentName && f.Hunks.Count > 0)
+            .OrderByDescending(f => f.Additions + f.Deletions)
+            .Take(3)
+            .SelectMany(f => f.Hunks.Take(2).Select(h => (BlockType.Code, JsonSerializer.Serialize(new
+            {
+                path = f.Path,
+                startLine = h.NewStart,
+                endLine = h.NewStart + Math.Max(0, h.NewLines - 1),
+                language = "Diff",
+                content = h.Text,
+                captionMd = $"`{f.ChangeKind}` · +{f.Additions}/−{f.Deletions}"
+                    + (f.HunksTruncated ? " · more hunks omitted" : ""),
+            }, JsonOpts))))
+            .ToList();
+
+        var merged = blocks.ToList();
+        var insertAt = merged.FindIndex(b => b.Type == BlockType.Markdown) + 1;
+        merged.InsertRange(insertAt > 0 ? insertAt : merged.Count, diffBlocks);
+        return merged;
+    }
+
+    private async Task<PrDiff?> TryLoadPrDiffAsync(Guid analysisId, CancellationToken ct)
+    {
+        var path = Path.Combine(_workspacesRoot, analysisId.ToString(), "prdiff.json");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<PrDiff>(await File.ReadAllTextAsync(path, ct), JsonOpts);
     }
 
     private async Task<RepoMap> LoadRepoMapAsync(Guid analysisId, CancellationToken ct) =>

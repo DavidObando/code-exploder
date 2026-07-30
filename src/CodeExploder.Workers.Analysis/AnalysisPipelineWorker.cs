@@ -247,12 +247,44 @@ public sealed class AnalysisPipelineWorker(
         await analyses.SavePlanAsync(p.AnalysisId, JsonSerializer.Serialize(new { summary }, JsonOpts), ct);
         Stage(p, AnalysisStages.Plan, StageState.Done);
 
+        // PR mode (docs/01 §PR-diff mode): compute the deterministic diff map and scope
+        // the S4 fan-out to touched components — the big LLM saving of the PR plan.
+        HashSet<string>? scope = null;
+        if (p.PrNumber is { } prNumber)
+        {
+            var prInfo = await gitHubApi.GetPullRequestAsync(p.Owner, p.Name, prNumber, ct);
+            var diffText = await git.DiffPrAsync(CheckoutPath(p.AnalysisId), ct);
+            var diffFiles = DiffMapper.Map(diffText, map, components);
+            var prDiff = new PrDiff(
+                prNumber, prInfo?.Title, prInfo?.Body, prInfo?.BaseRef ?? "main", diffFiles);
+            await File.WriteAllTextAsync(
+                PrDiffPath(p.AnalysisId), JsonSerializer.Serialize(prDiff, JsonOpts), ct);
+
+            var touched = prDiff.TouchedComponents;
+            Narrate(p, $"PR #{prNumber} touches {diffFiles.Count} file(s) "
+                + $"(+{prDiff.TotalAdditions}/−{prDiff.TotalDeletions}) across {touched.Count} component(s)");
+
+            // Cap by changed volume; docs-only PRs fall back to the top components so
+            // the overview still has grounding.
+            scope = touched.Count > 0
+                ? diffFiles.Where(f => f.Component is not null)
+                    .GroupBy(f => f.Component!)
+                    .OrderByDescending(g => g.Sum(f => f.Additions + f.Deletions))
+                    .Take(8).Select(g => g.Key)
+                    .ToHashSet(StringComparer.Ordinal)
+                : components.Take(3).Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
+        }
+
         // Hand off to the gpu-gen lane: S4 fan-out joined by S5 (docs/01 §1.2). The
         // stored component rows carry ids; the LLM worker re-derives file membership
         // deterministically from the repo map.
-        var stored = await analyses.GetComponentsAsync(p.AnalysisId, ct);
+        var stored = (await analyses.GetComponentsAsync(p.AnalysisId, ct))
+            .Where(c => scope is null || scope.Contains(c.Name))
+            .ToList();
         Stage(p, AnalysisStages.Summarize, StageState.Active);
-        Narrate(p, $"Handing off to the expert: summarizing {stored.Count} component(s)…");
+        Narrate(p, scope is null
+            ? $"Handing off to the expert: summarizing {stored.Count} component(s)…"
+            : $"Handing off to the expert: summarizing the {stored.Count} component(s) this PR touches…");
 
         var synthesizeId = await queue.EnqueueBlockedAsync(
             LlmJobTypes.Synthesize, JsonSerializer.Serialize(p, JsonOpts), stored.Count,
@@ -281,6 +313,8 @@ public sealed class AnalysisPipelineWorker(
     private string CheckoutPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "repo");
 
     private string RepoMapPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "repomap.json");
+
+    private string PrDiffPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "prdiff.json");
 
     private void Stage(Payload p, string stage, string state) =>
         bus.Publish(p.SessionId, SessionEventKinds.AnalysisStageChanged, new { stage, state });
