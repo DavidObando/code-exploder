@@ -19,6 +19,7 @@ public sealed class LlmPipelineWorker(
     AnalysisStore analyses,
     ExperienceStore experiences,
     QuizStore quizzes,
+    QaStore qaStore,
     CodeExploder.Qa.AnswerLoop answerLoop,
     ISessionEventBus bus,
     ILlmClient llm,
@@ -435,6 +436,25 @@ public sealed class LlmPipelineWorker(
                     await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Failed);
                     Narrate(p, $"Section “{p.Title}” failed to generate");
                     break;
+                case LlmJobTypes.QaAnswer:
+                    // A dead answer errors the MESSAGE — the session is already served
+                    // and must never flip to failed over a chat turn.
+                    await qaStore.CompleteMessageAsync(
+                        p.MessageId!.Value, "error",
+                        "Sorry — something went wrong answering this. Please try again.",
+                        null, null, null);
+                    bus.Publish(p.SessionId, SessionEventKinds.QaMessageCompleted,
+                        new { messageId = p.MessageId, threadId = p.ThreadId, status = "error", citations = (object?)null });
+                    break;
+                case LlmJobTypes.QuizGenerate:
+                    // Quizzes are enhancement; the section simply has none.
+                    Narrate(p, $"Couldn't generate a quiz for “{p.Title}”");
+                    break;
+                case LlmJobTypes.GradeQuiz:
+                    // Grade what the deterministic pass can; the short answer is
+                    // excluded (ungradable ≠ wrong), and the attempt resolves.
+                    await GradeDeterministicOnlyAsync(p.AttemptId!.Value);
+                    break;
                 default:
                     await sessions.SetAnalysisStatusAsync(p.AnalysisId, AnalysisStatus.Failed, reason, finished: true);
                     await sessions.SetSessionStatusAsync(p.SessionId, SessionStatus.Failed, reason);
@@ -545,6 +565,42 @@ public sealed class LlmPipelineWorker(
         }
 
         return JsonSerializer.Deserialize<PrDiff>(await File.ReadAllTextAsync(path, ct), JsonOpts);
+    }
+
+    private async Task GradeDeterministicOnlyAsync(Guid attemptId)
+    {
+        var attempt = await quizzes.GetAttemptAsync(attemptId);
+        if (attempt is null || attempt.Status == "graded")
+        {
+            return;
+        }
+
+        var quiz = await quizzes.GetForUserAsync(attempt.QuizId, attempt.UserId);
+        if (quiz is null)
+        {
+            return;
+        }
+
+        var answers = JsonSerializer.Deserialize<List<QuizAnswer>>(attempt.AnswersJson, JsonOpts) ?? [];
+        var results = QuizGrading.GradeDeterministic(
+            quiz.Questions.Select(q => (q.Id, q.Type, q.DataJson)).ToList(), answers);
+        for (var i = 0; i < results.Count; i++)
+        {
+            if (results[i].NeedsLlm)
+            {
+                var data = QuizGrading.ParseData(quiz.Questions.First(q => q.Id == results[i].QuestionId).DataJson);
+                results[i] = QuizGrading.ResolveShort(results[i].QuestionId, data, coverage: null);
+            }
+        }
+
+        var score = QuizGrading.ComputeScore(results) ?? 0;
+        await quizzes.CompleteGradingAsync(attemptId, score, JsonSerializer.Serialize(results, JsonOpts));
+        await quizzes.RecordScoreAsync(attempt.QuizId, attempt.UserId, score, QuizGrading.CompleteThresholdPct);
+        if (await quizzes.GetSessionForQuizAsync(attempt.QuizId) is { } route)
+        {
+            bus.Publish(route.SessionId, SessionEventKinds.QuizGraded,
+                new { attemptId, quizId = attempt.QuizId, scorePct = score, sectionId = route.SectionId });
+        }
     }
 
     private async Task<RepoMap> LoadRepoMapAsync(Guid analysisId, CancellationToken ct) =>

@@ -72,6 +72,11 @@ Ollama model IaC list so the embedder is pulled idempotently.
 
 ## Operations
 
+> **After restoring or recreating the database, restart every service.** Npgsql
+> caches extension type OIDs (pgvector's `vector`) per data source at first
+> connection; a worker that outlives a DB recreation fails with
+> `XX000: cache lookup failed for type <oid>` on its next vector operation.
+
 - **Backups**: Postgres is the only stateful store that matters (workspaces and the
   object store are re-derivable caches); add a `pg_dump` cron into the data mount,
   which is covered by HomeInfra's existing backup recommendations.
