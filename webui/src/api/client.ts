@@ -110,4 +110,10 @@ export const api = {
     request<ChunkPeek>(
       `/api/analyses/${encodeURIComponent(analysisId)}/chunks/${encodeURIComponent(chunkId)}`,
     ),
+  /**
+   * Starts origin-story generation (repo sessions only). 202; 409 (ApiError)
+   * when story sections already exist or are generating; 400 for PR sessions.
+   */
+  startStory: (sessionId: string) =>
+    request<void>(`/api/sessions/${encodeURIComponent(sessionId)}/story`, { method: 'POST' }),
 };

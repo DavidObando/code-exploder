@@ -28,6 +28,9 @@ ENV PROJECT_DLL=${PROJECT}.dll \
     DOTNET_EnableDiagnostics=0
 WORKDIR /app
 COPY --from=build /app .
+# Demo bundles (docs/08 §M7): the Gateway seeds these at startup so a fresh deploy
+# lands on a populated app. Harmless for worker images.
+COPY seeds/ ./seeds/
 # git: required by Workers.Analysis for S0 acquire (shallow clones); small cost to
 # carry in the shared image.
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \

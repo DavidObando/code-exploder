@@ -15,6 +15,7 @@ public sealed class AnalysisPipelineWorker(
     JobQueue queue,
     SessionStore sessions,
     AnalysisStore analyses,
+    ExperienceStore experiences,
     ISessionEventBus bus,
     GitCli git,
     GitHubApiClient gitHubApi,
@@ -26,7 +27,8 @@ public sealed class AnalysisPipelineWorker(
     public const string ChunkJob = "chunk";
     public const string PlanJob = "plan";
 
-    private static readonly string[] JobTypes = [AcquireJob, RepoMapJob, ChunkJob, PlanJob];
+    private static readonly string[] JobTypes =
+        [AcquireJob, RepoMapJob, ChunkJob, PlanJob, LlmJobTypes.HistoryMine];
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -68,7 +70,10 @@ public sealed class AnalysisPipelineWorker(
                     // large) — retrying wastes clones, so they terminally fail at once.
                     var terminal = ex is AcquireException || job.Attempts >= job.MaxAttempts;
                     await queue.FailAsync(job.Id, ex.Message, CancellationToken.None);
-                    if (terminal)
+
+                    // Post-completion jobs (the origin story's mine) must never flip a
+                    // finished session to failed — the tutorial is already served.
+                    if (terminal && job.JobType != LlmJobTypes.HistoryMine)
                     {
                         await MarkRunFailedAsync(job, ex is AcquireException ? ex.Message : "Analysis failed unexpectedly.");
                     }
@@ -93,6 +98,9 @@ public sealed class AnalysisPipelineWorker(
                 break;
             case PlanJob:
                 await RunPlanAsync(payload, ct);
+                break;
+            case LlmJobTypes.HistoryMine:
+                await RunHistoryMineAsync(payload, ct);
                 break;
             default:
                 throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
@@ -309,6 +317,75 @@ public sealed class AnalysisPipelineWorker(
     private async Task<RepoMap> LoadRepoMapAsync(Guid analysisId, CancellationToken ct) =>
         JsonSerializer.Deserialize<RepoMap>(await File.ReadAllTextAsync(RepoMapPath(analysisId), ct), JsonOpts)
         ?? throw new InvalidOperationException("repo map artifact missing");
+
+    /// <summary>
+    /// The origin story's deterministic pass (docs/08 §M9): unshallow the clone
+    /// (bloblessly), mine eras/births/moments from the full log, plan one story
+    /// chapter per era on the latest experience, and hand narration to the gpu lane.
+    /// </summary>
+    private async Task RunHistoryMineAsync(Payload p, CancellationToken ct)
+    {
+        Narrate(p, "The historian is digging through the archives…");
+        var checkout = CheckoutPath(p.AnalysisId);
+        if (!Directory.Exists(checkout))
+        {
+            // The workspace cache may have been reaped; a fresh clone restores it.
+            await git.CloneAsync($"https://github.com/{p.Owner}/{p.Name}", checkout, p.GitRef, null, ct);
+        }
+
+        await git.UnshallowAsync(checkout, ct);
+        var commits = HistoryMiner.ParseLog(await git.FullLogAsync(checkout, HistoryMiner.MaxCommits, ct));
+
+        IReadOnlyList<Component> components;
+        if (File.Exists(RepoMapPath(p.AnalysisId)))
+        {
+            components = new ComponentDetector().Detect(await LoadRepoMapAsync(p.AnalysisId, ct));
+        }
+        else
+        {
+            var stats = await git.CollectStatsAsync(checkout, ct);
+            var freshMap = new RepoMapper().Map(checkout, stats);
+            await File.WriteAllTextAsync(RepoMapPath(p.AnalysisId), JsonSerializer.Serialize(freshMap, JsonOpts), ct);
+            components = new ComponentDetector().Detect(freshMap);
+        }
+
+        var history = HistoryMiner.Mine(commits, components);
+        await File.WriteAllTextAsync(
+            HistoryPath(p.AnalysisId), JsonSerializer.Serialize(history, JsonOpts), ct);
+        Narrate(p, $"Mined {history.TotalCommits} commits ({history.FirstCommitAt:yyyy-MM-dd} → "
+            + $"{history.LastCommitAt:yyyy-MM-dd}) into {history.Eras.Count} era(s)");
+
+        var experience = await experiences.GetLatestForSessionAsync(p.SessionId, ct)
+            ?? throw new InvalidOperationException("session has no experience for a story");
+        var ord = await experiences.GetNextOrdAsync(experience.Id, ct);
+        await sessions.AddSectionsTotalAsync(p.AnalysisId, history.Eras.Count, ct);
+
+        foreach (var era in history.Eras)
+        {
+            var title = $"Chapter {era.Index + 1}: {CodeExploder.Pipeline.StorySupport.EraLabel(era)}";
+            var slug = $"story-era-{era.Index + 1}";
+            var sectionId = await experiences.CreateSectionAsync(
+                experience.Id, ord, slug, SectionKind.Story, title, "", ct);
+            await queue.EnqueueAsync(
+                LlmJobTypes.StorySection,
+                JsonSerializer.Serialize(new
+                {
+                    analysisId = p.AnalysisId,
+                    sessionId = p.SessionId,
+                    experienceId = experience.Id,
+                    sectionId,
+                    eraIndex = era.Index,
+                    ordinal = ord,
+                    slug,
+                    title,
+                }, JsonOpts),
+                analysisId: p.AnalysisId,
+                ct: ct);
+            ord++;
+        }
+    }
+
+    private string HistoryPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "history.json");
 
     private string CheckoutPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "repo");
 

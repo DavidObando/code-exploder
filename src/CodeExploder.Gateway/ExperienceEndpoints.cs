@@ -12,6 +12,8 @@ namespace CodeExploder.Gateway;
 /// </summary>
 public static class ExperienceEndpoints
 {
+    private static readonly JsonSerializerOptions PlanJsonOpts = new(JsonSerializerDefaults.Web);
+
     private static readonly HashSet<string> ValidProgressStates =
         [ProgressState.Unread, ProgressState.Read, ProgressState.Skipped, ProgressState.Completed];
 
@@ -62,6 +64,58 @@ public static class ExperienceEndpoints
             })
             .RequireAuthorization()
             .Produces<SectionDetail>()
+            .Produces(StatusCodes.Status404NotFound);
+
+        // The origin story (docs/08 §M9): mines the full git history on the cpu lane,
+        // then story chapters stream into the existing experience as ready sections.
+        app.MapPost("/api/sessions/{id:guid}/story", async (
+                Guid id, HttpContext http, SessionStore sessions, ExperienceStore store,
+                JobQueue queue, CancellationToken ct) =>
+            {
+                var userId = await sessions.GetOrCreateUserAsync(
+                    CurrentUser.SubjectOf(http.User), CurrentUser.NameOf(http.User), ct);
+                var session = await sessions.GetForUserAsync(id, userId, ct);
+                if (session is null)
+                {
+                    return Results.NotFound();
+                }
+
+                if (session.Kind != SessionKind.Repo)
+                {
+                    return Results.BadRequest(new ErrorResponse("The origin story is for repository sessions."));
+                }
+
+                if (session.Status is not (SessionStatus.Ready or SessionStatus.Partial))
+                {
+                    return Results.Conflict(new ErrorResponse("Wait for the analysis to finish first."));
+                }
+
+                // Story sections only exist after the mine completes, so also guard on
+                // in-flight story jobs — a rapid double-POST must not fork the story.
+                if (await store.HasStorySectionsAsync(id, ct)
+                    || await queue.HasActiveJobAsync(
+                        session.AnalysisId, [LlmJobTypes.HistoryMine, LlmJobTypes.StorySection], ct))
+                {
+                    return Results.Conflict(new ErrorResponse("The story is already being told."));
+                }
+
+                await queue.EnqueueAsync(
+                    LlmJobTypes.HistoryMine,
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        analysisId = session.AnalysisId,
+                        sessionId = id,
+                        owner = session.RepoOwner,
+                        name = session.RepoName,
+                    }, PlanJsonOpts),
+                    analysisId: session.AnalysisId,
+                    ct: ct);
+                return Results.Accepted(value: new { });
+            })
+            .RequireAuthorization()
+            .Produces(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces(StatusCodes.Status404NotFound);
 
         app.MapPut("/api/sections/{sectionId:guid}/progress", async (

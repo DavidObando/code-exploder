@@ -1,5 +1,8 @@
 import { Link } from 'react-router-dom';
-import type { ExperienceToc, SectionTocEntry } from '../../api/types';
+import { useMutation } from '@tanstack/react-query';
+import { api, ApiError } from '../../api/client';
+import type { ExperienceToc, SectionTocEntry, SessionSummary } from '../../api/types';
+import { useUi } from '../../store/ui';
 import styles from './tutorial.module.css';
 
 // Glyphs per docs/05-ux.md: ✓ completed · ● current · ○ unread/read · ─ skipped
@@ -96,18 +99,66 @@ function Row({
   );
 }
 
+/**
+ * Origin-story footer action (M9): repo sessions that finished analysis and
+ * have no story sections yet can summon the historian.
+ */
+function StoryFooter({ session, hasStory }: { session: SessionSummary; hasStory: boolean }) {
+  const toast = useUi((s) => s.toast);
+
+  const start = useMutation({
+    mutationFn: () => api.startStory(session.id),
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 409) {
+        toast('info', 'The story is already being told');
+      } else {
+        toast(
+          'error',
+          'Could not start the story',
+          err instanceof ApiError ? err.message : 'Unexpected error',
+        );
+      }
+    },
+  });
+
+  const eligible =
+    session.kind === 'repo' &&
+    (session.status === 'ready' || session.status === 'partial') &&
+    !hasStory;
+  if (!eligible) return null;
+
+  // SectionReady invalidations bring the story sections into the TOC; once the
+  // first one exists, hasStory flips and this footer disappears entirely.
+  if (start.isSuccess) {
+    return (
+      <div className={styles.storyNote} role="status">
+        the historian is digging through the archives…
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className={styles.storyButton}
+      onClick={() => start.mutate()}
+      disabled={start.isPending}
+    >
+      ✨ Tell the origin story
+    </button>
+  );
+}
+
 /** Tutorial TOC: overall completion + estimated minutes left + per-section rows. */
 export function SectionNav({
   toc,
-  sessionId,
-  sessionTitle,
+  session,
   currentSlug,
 }: {
   toc: ExperienceToc;
-  sessionId: string;
-  sessionTitle: string;
+  session: SessionSummary;
   currentSlug: string | null;
 }) {
+  const sessionId = session.id;
   const sections = [...toc.sections].sort((a, b) => a.ord - b.ord);
   const total = sections.length;
   const completed = sections.filter((s) => s.myState === 'completed').length;
@@ -115,12 +166,13 @@ export function SectionNav({
   const minutesLeft = sections
     .filter((s) => s.status === 'ready' && s.myState === 'unread')
     .reduce((sum, s) => sum + s.estimatedMinutes, 0);
+  const hasStory = sections.some((s) => s.kind === 'story');
 
   return (
     <nav className={styles.toc} aria-label="Tutorial contents">
       <div className={styles.tocHeader}>
-        <h2 className={styles.tocTitle} title={sessionTitle}>
-          {sessionTitle}
+        <h2 className={styles.tocTitle} title={session.title}>
+          {session.title}
         </h2>
         <div className={styles.tocTrack} aria-hidden="true">
           <div className={styles.tocFill} style={{ width: `${percent}%` }} />
@@ -138,6 +190,7 @@ export function SectionNav({
           isCurrent={entry.slug === currentSlug}
         />
       ))}
+      <StoryFooter session={session} hasStory={hasStory} />
     </nav>
   );
 }

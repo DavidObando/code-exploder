@@ -13,6 +13,7 @@ public static class PromptLibrary
     public const string DiagramSpec = "diagram-spec.v1";
     public const string Section = "section.v1";
     public const string Quiz = "quiz.v1";
+    public const string Story = "story.v1";
     public const string Grade = "grade.v1";
     public const string Repair = "repair.v1";
 

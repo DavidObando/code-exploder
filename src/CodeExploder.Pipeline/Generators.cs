@@ -187,11 +187,12 @@ public sealed class SectionGenerator(ILlmClient llm, ILogger<SectionGenerator> l
         string workspaceRoot,
         RepoMap map,
         DiagramSpecGenerator.Result? diagram,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? promptName = null)
     {
         var call = new JsonLlmCall(llm, logger);
         var response = await call.CallAsync<Response>(
-            PromptLibrary.Load(PromptLibrary.Section),
+            PromptLibrary.Load(promptName ?? PromptLibrary.Section),
             $"Working title: {workingTitle}\n{material}",
             r =>
             {

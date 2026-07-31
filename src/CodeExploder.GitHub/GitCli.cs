@@ -81,6 +81,35 @@ public sealed class GitCli(ILogger<GitCli> logger)
         return await RunAsync(workspacePath, ["diff", "--no-color", "-M", $"{baseRef}..HEAD"], ct);
     }
 
+    /// <summary>
+    /// Converts the shallow clone to full history without blob content (tree/commit
+    /// metadata only — all the story miner needs). Idempotent: already-complete
+    /// clones are a no-op.
+    /// </summary>
+    public async Task UnshallowAsync(string workspacePath, CancellationToken ct)
+    {
+        try
+        {
+            await RunAsync(workspacePath, ["fetch", "--unshallow", "--filter=blob:none", "origin"], ct);
+        }
+        catch (AcquireException ex) when (ex.Message.Contains("complete", StringComparison.OrdinalIgnoreCase))
+        {
+            // "fatal: --unshallow on a complete repository does not make sense"
+        }
+    }
+
+    /// <summary>
+    /// Full commit log oldest-first with touched paths, capped at
+    /// <paramref name="maxCommits"/> most recent commits. Rename detection is off so
+    /// blobless partial clones need no content fetches.
+    /// </summary>
+    public async Task<string> FullLogAsync(string workspacePath, int maxCommits, CancellationToken ct) =>
+        await RunAsync(workspacePath,
+        [
+            "log", "--reverse", "--no-renames", "--name-only", "--date=iso-strict",
+            $"--max-count={maxCommits}", "--pretty=format:@@%H|%an|%ad|%s",
+        ], ct);
+
     /// <summary>Commit/contributor counts and per-file churn over the shallow history window.</summary>
     public async Task<GitStats> CollectStatsAsync(string workspacePath, CancellationToken ct)
     {

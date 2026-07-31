@@ -232,6 +232,22 @@ public sealed class JobQueue(NpgsqlDataSource dataSource)
         return await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>True when any of the given job types is queued/blocked/running for the analysis.</summary>
+    public async Task<bool> HasActiveJobAsync(
+        Guid analysisId, IReadOnlyCollection<string> jobTypes, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select 1 from jobs
+            where analysis_id = $1 and job_type = any($2)
+              and status in ('queued','blocked','running')
+            limit 1
+            """);
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(jobTypes.ToArray());
+        return await cmd.ExecuteScalarAsync(ct) is not null;
+    }
+
     /// <summary>Queue depth for the status bar: (queued, running) counts.</summary>
     public async Task<(long Queued, long Running)> DepthAsync(CancellationToken ct = default)
     {

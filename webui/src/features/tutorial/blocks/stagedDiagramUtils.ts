@@ -29,6 +29,14 @@ export interface DiagramMap {
   complete: boolean;
 }
 
+/**
+ * Timelines (M9) never use reveal mapping/ghosting: they render fully visible
+ * and their stepper is purely a narration walker.
+ */
+export function supportsReveal(diagramKind: DiagramData['diagramKind']): boolean {
+  return diagramKind === 'flowchart' || diagramKind === 'sequence';
+}
+
 /** Every node id and edge index referenced across all stages. */
 function referenced(stages: DiagramStage[]): { nodes: Set<string>; edges: Set<number> } {
   return computeReveal(stages, stages.length - 1);
@@ -74,6 +82,10 @@ function mapSequence(svg: SVGSVGElement): Pick<DiagramMap, 'nodes' | 'edges'> {
  * a fully visible diagram, never a broken one.
  */
 export function buildDiagramMap(svg: SVGSVGElement, data: DiagramData): DiagramMap {
+  // Defensive: callers skip mapping for timelines, but never ghost one either way.
+  if (!supportsReveal(data.diagramKind)) {
+    return { nodes: new Map(), edges: [], complete: true };
+  }
   const { nodes, edges } =
     data.diagramKind === 'sequence' ? mapSequence(svg) : mapFlowchart(svg);
   const needed = referenced(data.stages);

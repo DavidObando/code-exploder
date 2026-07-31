@@ -32,7 +32,7 @@ public sealed class LlmPipelineWorker(
     [
         LlmJobTypes.SummarizeComponent, LlmJobTypes.Synthesize, LlmJobTypes.TutorialSection,
         LlmJobTypes.FinalizeExperience, LlmJobTypes.QuizGenerate, LlmJobTypes.GradeQuiz,
-        LlmJobTypes.QaAnswer,
+        LlmJobTypes.QaAnswer, LlmJobTypes.StorySection,
     ];
 
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
@@ -117,6 +117,9 @@ public sealed class LlmPipelineWorker(
                 break;
             case LlmJobTypes.QaAnswer:
                 await answerLoop.AnswerAsync(p.AnalysisId, p.SessionId, p.ThreadId!.Value, p.MessageId!.Value, ct);
+                break;
+            case LlmJobTypes.StorySection:
+                await RunStorySectionAsync(p, ct);
                 break;
             default:
                 throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
@@ -428,7 +431,7 @@ public sealed class LlmPipelineWorker(
                     // Gap tolerated: the synthesize join proceeds with what succeeded.
                     Narrate(p, $"Couldn't summarize component {p.ComponentName}; continuing without it");
                     break;
-                case LlmJobTypes.TutorialSection:
+                case LlmJobTypes.TutorialSection or LlmJobTypes.StorySection:
                     await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Failed);
                     Narrate(p, $"Section “{p.Title}” failed to generate");
                     break;
@@ -444,6 +447,68 @@ public sealed class LlmPipelineWorker(
             logger.LogError(ex, "Failed to handle terminal failure for job {JobId}", job.Id);
         }
     }
+
+    /// <summary>
+    /// One origin-story chapter (docs/08 §M9): narrate an era from the mined history.
+    /// The first chapter opens with the deterministic timeline diagram.
+    /// </summary>
+    private async Task RunSectionStoryCoreAsync(Payload p, CancellationToken ct)
+    {
+        await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Generating, ct);
+        Narrate(p, $"Writing {p.Title}");
+
+        var history = JsonSerializer.Deserialize<HistoryDoc>(
+            await File.ReadAllTextAsync(
+                Path.Combine(_workspacesRoot, p.AnalysisId.ToString(), "history.json"), ct), JsonOpts)
+            ?? throw new InvalidOperationException("history artifact missing");
+        var era = history.Eras[p.EraIndex!.Value];
+        var repoSummary = await LoadRepoSummaryAsync(p.AnalysisId, ct);
+        var architectureJson = await analyses.GetRepoSummaryStructuredAsync(p.AnalysisId, ct);
+        var architecture = architectureJson is null
+            ? null
+            : JsonSerializer.Deserialize<ArchitectureDoc>(architectureJson, JsonOpts);
+
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var material = StorySupport.ForEra(history, era, repoSummary, architecture);
+        var generator = new SectionGenerator(llm, LoggerFor<SectionGenerator>());
+        var result = await generator.GenerateAsync(
+            p.Title!, material, CheckoutPath(p.AnalysisId), map, null, ct, PromptLibrary.Story);
+
+        var blocks = result.Blocks.ToList();
+        if (p.EraIndex == 0)
+        {
+            var (mermaid, stages) = StorySupport.RenderTimeline(history);
+            blocks.Insert(0, (BlockType.Diagram, JsonSerializer.Serialize(new
+            {
+                diagramKind = "timeline",
+                title = "The life of this repository",
+                mermaid,
+                stages = stages.Select(s => new
+                {
+                    title = s.Title,
+                    narrationMd = s.NarrationMd,
+                    reveal = new { nodes = s.NodeIds, edges = s.EdgeIndexes },
+                }),
+            }, JsonOpts)));
+        }
+
+        await experiences.CompleteSectionAsync(
+            p.SectionId.Value, result.SummaryLine, result.EstimatedMinutes, blocks, ct);
+
+        var (ready, total) = await sessions.IncrementSectionsReadyAsync(p.AnalysisId, ct);
+        _ = (ready, total);
+        bus.Publish(p.SessionId, SessionEventKinds.SectionReady,
+            new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal });
+
+        await queue.EnqueueAsync(
+            LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts), analysisId: p.AnalysisId, ct: ct);
+        await queue.EnqueueAsync(
+            LlmJobTypes.EmbedSection,
+            JsonSerializer.Serialize(new { sectionId = p.SectionId }, JsonOpts),
+            analysisId: p.AnalysisId, ct: ct);
+    }
+
+    private Task RunStorySectionAsync(Payload p, CancellationToken ct) => RunSectionStoryCoreAsync(p, ct);
 
     /// <summary>Diff blocks land right after the section's opening paragraph.</summary>
     private static List<(string Type, string DataJson)> InjectDiffBlocks(
@@ -525,7 +590,8 @@ public sealed class LlmPipelineWorker(
         string? Title = null,
         Guid? AttemptId = null,
         Guid? ThreadId = null,
-        Guid? MessageId = null);
+        Guid? MessageId = null,
+        int? EraIndex = null);
 
     private static string Slugify(string input) =>
         new(input.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());

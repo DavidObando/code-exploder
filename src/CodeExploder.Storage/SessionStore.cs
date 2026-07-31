@@ -192,6 +192,15 @@ public sealed class SessionStore(NpgsqlDataSource dataSource)
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task AddSectionsTotalAsync(Guid analysisId, int delta, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "update analyses set sections_total = sections_total + $2 where id = $1");
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(delta);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task SetSectionsTotalAsync(Guid analysisId, int total, CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand(

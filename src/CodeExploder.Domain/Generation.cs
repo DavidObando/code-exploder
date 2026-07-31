@@ -65,6 +65,7 @@ public static class SectionKind
     public const string Architecture = "architecture";
     public const string Scenario = "scenario";
     public const string Build = "build";
+    public const string Story = "story";
 }
 
 public static class SectionState

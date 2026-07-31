@@ -1,4 +1,4 @@
-import { applyReveal, buildDiagramMap, computeReveal } from './stagedDiagramUtils';
+import { applyReveal, buildDiagramMap, computeReveal, supportsReveal } from './stagedDiagramUtils';
 import type { DiagramData, DiagramStage } from '../../../api/types';
 
 const stages: DiagramStage[] = [
@@ -92,6 +92,34 @@ describe('buildDiagramMap / applyReveal', () => {
     expect(svg.querySelector('#e0')!.classList.contains('ghost')).toBe(false);
 
     applyReveal(map, computeReveal(twoStages, 0), true);
+    expect(svg.querySelectorAll('.ghost')).toHaveLength(0);
+  });
+});
+
+describe('timeline diagrams (M9)', () => {
+  it('supportsReveal is true only for flowchart and sequence', () => {
+    expect(supportsReveal('flowchart')).toBe(true);
+    expect(supportsReveal('sequence')).toBe(true);
+    expect(supportsReveal('timeline')).toBe(false);
+  });
+
+  it('buildDiagramMap skips element mapping for timelines: empty, complete map', () => {
+    const svg = flowchartSvg(); // whatever the DOM shape, timelines never map it
+    const data: DiagramData = {
+      diagramKind: 'timeline',
+      title: 'History',
+      mermaid: 'timeline\n 2019 : born',
+      stages: [
+        { title: 'Era 1', narrationMd: 'a', reveal: { nodes: [], edges: [] } },
+        { title: 'Era 2', narrationMd: 'b', reveal: { nodes: [], edges: [] } },
+      ],
+    };
+    const map = buildDiagramMap(svg, data);
+    expect(map.complete).toBe(true);
+    expect(map.nodes.size).toBe(0);
+    expect(map.edges).toHaveLength(0);
+    // Applying any reveal to an empty map ghosts nothing.
+    applyReveal(map, computeReveal(data.stages, 0), false);
     expect(svg.querySelectorAll('.ghost')).toHaveLength(0);
   });
 });

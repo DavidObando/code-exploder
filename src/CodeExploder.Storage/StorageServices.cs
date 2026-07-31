@@ -27,6 +27,8 @@ public static class StorageServices
         services.AddSingleton<ExperienceStore>();
         services.AddSingleton<QuizStore>();
         services.AddSingleton<QaStore>();
+        services.AddSingleton<Bundles.BundleExporter>();
+        services.AddSingleton<Bundles.BundleImporter>();
         return services;
     }
 

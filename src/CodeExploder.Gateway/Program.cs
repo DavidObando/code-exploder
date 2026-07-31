@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CodeExploder.Gateway;
+using CodeExploder.Llm;
 using CodeExploder.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 
@@ -7,8 +8,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCodeExploderStorage(builder.Configuration);
 builder.Services.AddSessionEventPublishing();
+builder.Services.AddCodeExploderLlm(builder.Configuration); // embeddings for /search (docs/08 §M8)
+builder.Services.AddSingleton<CodeExploder.Qa.Retriever>();
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<SessionEventRelayService>();
+builder.Services.AddHostedService<SeedService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi(options =>
 {
@@ -114,6 +118,24 @@ if (emitOpenApiIndex < 0)
     {
         app.Logger.LogInformation("Applied migrations: {Versions}", string.Join(", ", applied));
     }
+}
+
+// `--export-bundle <sessionId> <outPath>` writes a demo/backup bundle and exits
+// (docs/08 §M7); hosted services never start on this path.
+var exportBundleIndex = Array.IndexOf(args, "--export-bundle");
+if (exportBundleIndex >= 0)
+{
+    if (args.Length <= exportBundleIndex + 2 || !Guid.TryParse(args[exportBundleIndex + 1], out var exportSessionId))
+    {
+        Console.Error.WriteLine("usage: --export-bundle <sessionId> <outPath>");
+        return;
+    }
+
+    var outPath = args[exportBundleIndex + 2];
+    await app.Services.GetRequiredService<CodeExploder.Storage.Bundles.BundleExporter>()
+        .ExportAsync(exportSessionId, outPath);
+    Console.WriteLine($"Bundle written to {Path.GetFullPath(outPath)}");
+    return;
 }
 
 app.UseDefaultFiles();

@@ -92,7 +92,8 @@ export type SectionKind =
   | 'build'
   | 'pr-overview'
   | 'pr-walkthrough'
-  | 'pr-risk';
+  | 'pr-risk'
+  | 'story';
 export type SectionStatus = 'pending' | 'generating' | 'ready' | 'failed';
 export type SectionUserState = 'unread' | 'read' | 'skipped' | 'completed';
 
@@ -129,7 +130,11 @@ export interface DiagramStage {
 }
 
 export interface DiagramData {
-  diagramKind: 'flowchart' | 'sequence';
+  /**
+   * 'timeline' (story sections, M9): stages carry narration per era but the
+   * reveal sets are empty — no ghosting, the stepper is a narration walker.
+   */
+  diagramKind: 'flowchart' | 'sequence' | 'timeline';
   title: string;
   /** Full mermaid document — rendered once; stages reveal via CSS ghosting. */
   mermaid: string;

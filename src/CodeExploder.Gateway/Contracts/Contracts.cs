@@ -96,6 +96,12 @@ public sealed record NewMessageResponse(Guid UserMessageId, Guid AssistantMessag
 
 public sealed record ChunkPeek(string Path, int StartLine, int EndLine, string Language, string Content);
 
+public sealed record SearchHit(Guid ChunkId, string Path, int StartLine, int EndLine, string Snippet);
+
+public sealed record SearchProse(string Kind, string Title, string Text);
+
+public sealed record SearchResponse(IReadOnlyList<SearchHit> Chunks, IReadOnlyList<SearchProse> Prose);
+
 public sealed record ErrorResponse(string Message);
 
 public sealed record HealthResponse(string Status);

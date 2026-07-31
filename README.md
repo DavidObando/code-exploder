@@ -32,9 +32,9 @@ The core product (M0–M4) works end-to-end today. Full descriptions in
 | ✅ | **M4 — Q&A virtual expert** | pgvector knowledge base, vector+FTS+trigram retrieval with RRF fusion, token-streamed answers with peekable file/line citations |
 | ✅ | **M5 — PR-diff explainer** | Paste a PR URL: deterministic diff map, summaries scoped to touched components, change-badged architecture diagram, bottom-up walkthroughs with diff hunks, risk notes |
 | 🔄 | **M6 — Deploy + hardening** | Home-infrastructure deployment (Traefik ingress, SOPS secrets, published images), production auth gate, retention |
-| ⬜ | **M7 — Seeded demo report** | A pre-baked analysis bundle installed as a ready session for product review; doubles as analysis backup/restore |
-| ⬜ | **M8 — MCP server** | The knowledge base as MCP tools (stdio + streamable HTTP) for agents and IDEs: search, summaries, sections, ask-expert |
-| ⬜ | **M9 — Origin story** | The Song Exploder moment: mine the full git history and tell, piece by piece, the story of how the product was made — eras, key commits, evolving architecture diagrams, narrated as a chaptered story |
+| ✅ | **M7 — Seeded demo report** | Pre-baked analysis bundles (`seeds/*.cxbundle.gz`, embeddings included) seeded at startup as ready demo sessions; the format doubles as analysis backup/restore |
+| ✅ | **M8 — MCP server** | The knowledge base as MCP tools (dependency-free stdio adapter over the API; remote rides the edge auth gate): search, summaries, sections, ask-expert — see [docs/09](docs/09-mcp-server.md) |
+| ✅ | **M9 — Origin story** | The Song Exploder moment: mine the full git history (eras, component births, key moments) and tell, chapter by chapter, how the product was made — with a timeline diagram and commit-anchored narration |
 
 The LLM defaults to `qwen3-coder:oc` via an OpenAI-compatible endpoint
 (`Llm__BaseUrl`, default `http://localhost:11434/v1`); the embedding/generation
@@ -68,6 +68,7 @@ The initial system design study lives in [`docs/`](docs/00-overview.md):
 | [06-llm-strategy](docs/06-llm-strategy.md) | Model selection, context packing, token budgets, RAG design |
 | [07-deployment](docs/07-deployment.md) | Home-infrastructure deployment, ingress, secrets |
 | [08-milestones-and-risks](docs/08-milestones-and-risks.md) | Milestones M0–M9, risk register |
+| [09-mcp-server](docs/09-mcp-server.md) | The knowledge base as MCP tools (stdio adapter, local + remote) |
 
 ## License
 

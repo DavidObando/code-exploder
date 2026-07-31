@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { DiagramData } from '../../../api/types';
 import { useTutorial } from '../../../store/tutorial';
 import { useUi } from '../../../store/ui';
-import { applyReveal, buildDiagramMap, computeReveal } from './stagedDiagramUtils';
+import { applyReveal, buildDiagramMap, computeReveal, supportsReveal } from './stagedDiagramUtils';
 import type { DiagramMap } from './stagedDiagramUtils';
 import { MarkdownBlock } from './MarkdownBlock';
 import styles from './blocks.module.css';
@@ -144,7 +144,9 @@ export function StagedDiagram({
         if (!container) return;
         container.innerHTML = svg;
         const svgEl = container.querySelector('svg');
-        mapRef.current = svgEl ? buildDiagramMap(svgEl, data) : null;
+        // Timelines render fully visible: no element mapping, no ghosting.
+        mapRef.current =
+          svgEl && supportsReveal(data.diagramKind) ? buildDiagramMap(svgEl, data) : null;
         setRenderState('ok');
       } catch (err) {
         if (cancelled) return;

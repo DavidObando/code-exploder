@@ -48,6 +48,8 @@ public static class LlmJobTypes
     public const string QuizGenerate = "quiz-generate";
     public const string GradeQuiz = "grade-quiz";
     public const string QaAnswer = "qa-answer";
+    public const string HistoryMine = "history-mine";
+    public const string StorySection = "story-section";
     public const string EmbedBatch = "embed-batch";
     public const string EmbedSummaries = "embed-summaries";
     public const string EmbedSection = "embed-section";

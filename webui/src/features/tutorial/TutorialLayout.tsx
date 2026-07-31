@@ -106,12 +106,7 @@ export function TutorialLayout() {
 
   return (
     <div className={styles.layout}>
-      <SectionNav
-        toc={experience.data}
-        sessionId={id}
-        sessionTitle={session.data.title}
-        currentSlug={sectionSlug ?? null}
-      />
+      <SectionNav toc={experience.data} session={session.data} currentSlug={sectionSlug ?? null} />
       <div className={styles.content}>
         <div className={styles.contentHeader}>
           <button

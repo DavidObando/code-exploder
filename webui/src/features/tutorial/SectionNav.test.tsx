@@ -1,7 +1,28 @@
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Mock } from 'vitest';
 import { SectionNav, sectionGlyph } from './SectionNav';
-import type { ExperienceToc, SectionTocEntry } from '../../api/types';
+import { useUi } from '../../store/ui';
+import type { ExperienceToc, SectionTocEntry, SessionSummary } from '../../api/types';
+
+vi.mock('../../api/client', () => ({
+  ApiError: class MockApiError extends Error {
+    constructor(
+      public status: number,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
+  api: {
+    startStory: vi.fn(),
+  },
+}));
+
+import { api, ApiError } from '../../api/client';
+
+const mockStartStory = api.startStory as Mock;
 
 function entry(overrides: Partial<SectionTocEntry>): SectionTocEntry {
   return {
@@ -46,6 +67,26 @@ const toc: ExperienceToc = {
   ],
 };
 
+const session: SessionSummary = {
+  id: 'sess1',
+  kind: 'repo',
+  title: 'next.js',
+  repoOwner: 'vercel',
+  repoName: 'next.js',
+  prNumber: null,
+  analysisId: 'an1',
+  status: 'ready',
+  failureReason: null,
+  createdAt: '2026-07-30T00:00:00Z',
+  progress: { completedSections: 1, totalSections: 6 },
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  useUi.setState({ toasts: [] });
+  mockStartStory.mockResolvedValue(undefined);
+});
+
 afterEach(cleanup);
 
 describe('sectionGlyph', () => {
@@ -66,14 +107,24 @@ describe('sectionGlyph', () => {
   });
 });
 
-describe('SectionNav', () => {
-  function renderNav(currentSlug: string | null = 'arch') {
-    return render(
+function renderNav(
+  currentSlug: string | null = 'arch',
+  navToc: ExperienceToc = toc,
+  navSession: SessionSummary = session,
+) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SectionNav toc={toc} sessionId="sess1" sessionTitle="next.js" currentSlug={currentSlug} />
-      </MemoryRouter>,
-    );
-  }
+        <SectionNav toc={navToc} session={navSession} currentSlug={currentSlug} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe('SectionNav', () => {
 
   it('renders a row per section with its glyph', () => {
     renderNav();
@@ -115,5 +166,54 @@ describe('SectionNav', () => {
       'title',
       'Best quiz score: 80%',
     );
+  });
+});
+
+describe('SectionNav story footer', () => {
+  const storyButtonName = /Tell the origin story/;
+
+  it('renders for a ready repo session with no story sections and POSTs on click', async () => {
+    renderNav();
+    const button = screen.getByRole('button', { name: storyButtonName });
+    fireEvent.click(button);
+    await waitFor(() => expect(mockStartStory).toHaveBeenCalledWith('sess1'));
+    // Button flips to the pulsing historian note until story sections arrive.
+    expect(await screen.findByText('the historian is digging through the archives…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: storyButtonName })).not.toBeInTheDocument();
+  });
+
+  it('does not render for PR sessions', () => {
+    renderNav('arch', toc, { ...session, kind: 'pr', prNumber: 812 });
+    expect(screen.queryByRole('button', { name: storyButtonName })).not.toBeInTheDocument();
+  });
+
+  it('does not render while the session is still analyzing', () => {
+    renderNav('arch', toc, { ...session, status: 'analyzing' });
+    expect(screen.queryByRole('button', { name: storyButtonName })).not.toBeInTheDocument();
+  });
+
+  it('does not render once story sections exist in the TOC', () => {
+    const withStory: ExperienceToc = {
+      ...toc,
+      sections: [
+        ...toc.sections,
+        entry({ id: 's7', slug: 'origins', title: 'Origins', ord: 6, kind: 'story' }),
+      ],
+    };
+    renderNav('arch', withStory);
+    expect(screen.queryByRole('button', { name: storyButtonName })).not.toBeInTheDocument();
+    expect(screen.queryByText(/historian/)).not.toBeInTheDocument();
+  });
+
+  it('shows an info toast on 409 (story already being told)', async () => {
+    mockStartStory.mockRejectedValue(new ApiError(409, 'Story generation already running'));
+    renderNav();
+    fireEvent.click(screen.getByRole('button', { name: storyButtonName }));
+    await waitFor(() => {
+      const toasts = useUi.getState().toasts;
+      expect(toasts.some((t) => t.kind === 'info' && t.title === 'The story is already being told')).toBe(true);
+    });
+    // 409 keeps the button (the TOC will update via SectionReady invalidations).
+    expect(screen.getByRole('button', { name: storyButtonName })).toBeInTheDocument();
   });
 });

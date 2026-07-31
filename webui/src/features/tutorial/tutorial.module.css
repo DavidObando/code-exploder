@@ -144,6 +144,44 @@ a.tocRow:hover {
   line-height: 12px;
 }
 
+/* Origin-story footer action */
+.storyButton {
+  margin-top: auto;
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
+}
+
+.storyButton:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.storyButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.storyNote {
+  margin-top: auto;
+  font: var(--type-caption);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-2);
+  animation: tocPulse 1.4s var(--ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyNote {
+    animation: none;
+  }
+}
+
 /* --- Content column --- */
 .content {
   display: flex;

@@ -144,6 +144,40 @@ public static class QaEndpoints
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status404NotFound);
 
+        // Raw KB retrieval (docs/08 §M8): the same fused search the Q&A loop uses,
+        // exposed for MCP clients and future integrations.
+        app.MapGet("/api/sessions/{id:guid}/search", async (
+                Guid id, string q, int? k, HttpContext http,
+                SessionStore sessions, CodeExploder.Qa.Retriever retriever,
+                CodeExploder.Llm.IEmbedClient embed, CancellationToken ct) =>
+            {
+                if (string.IsNullOrWhiteSpace(q))
+                {
+                    return Results.BadRequest(new ErrorResponse("q is required"));
+                }
+
+                var userId = await ResolveUserAsync(http, sessions, ct);
+                var session = await sessions.GetForUserAsync(id, userId, ct);
+                if (session is null)
+                {
+                    return Results.NotFound();
+                }
+
+                var embedding = (await embed.EmbedAsync([q], ct))[0];
+                var retrieval = await retriever.RetrieveAsync(session.AnalysisId, id, embedding, q, ct);
+                var limit = Math.Clamp(k ?? 8, 1, 20);
+                return Results.Ok(new SearchResponse(
+                    retrieval.Chunks.Take(limit).Select(c => new SearchHit(
+                        c.ChunkId, c.Path, c.StartLine, c.EndLine,
+                        c.Content.Length <= 600 ? c.Content : c.Content[..600] + "\n…")).ToList(),
+                    retrieval.Prose.Take(3).Select(p => new SearchProse(p.Kind, p.Title,
+                        p.Text.Length <= 600 ? p.Text : p.Text[..600] + "…")).ToList()));
+            })
+            .RequireAuthorization()
+            .Produces<SearchResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound);
+
         app.MapGet("/api/analyses/{analysisId:guid}/chunks/{chunkId:guid}", async (
                 Guid analysisId, Guid chunkId, HttpContext http, SessionStore sessions,
                 NpgsqlDataSource db, CancellationToken ct) =>

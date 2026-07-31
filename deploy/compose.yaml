@@ -35,6 +35,8 @@ services:
       <<: *app-env
       ASPNETCORE_URLS: http://0.0.0.0:8080
       Auth__Mode: ${AUTH_MODE:-Oidc}
+      # /api/sessions/{id}/search embeds the query in-gateway (docs/09).
+      Llm__BaseUrl: ${LLM_BASE_URL:-http://localhost:11434/v1}
     ports:
       - "8080:8080"
     depends_on:

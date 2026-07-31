@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { BlockRenderer } from './BlockRenderer';
 import type { Block } from '../../../api/types';
@@ -96,5 +96,33 @@ describe('BlockRenderer', () => {
     expect(screen.getByText('Requests arrive.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Previous stage' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next stage' })).toBeEnabled();
+  });
+
+  it('renders timeline diagrams fully visible with a narration-walking stepper (no ghosting, no warning)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container } = renderBlock({
+      id: 'b5',
+      ord: 4,
+      type: 'diagram',
+      data: {
+        diagramKind: 'timeline',
+        title: 'The origin story',
+        mermaid: 'timeline\n 2019 : first commit\n 2021 : v1.0',
+        stages: [
+          { title: 'The spark', narrationMd: 'One developer, one weekend.', reveal: { nodes: [], edges: [] } },
+          { title: 'Going public', narrationMd: 'v1.0 ships.', reveal: { nodes: [], edges: [] } },
+        ],
+      },
+    });
+    expect(await screen.findByText('Stage 1 of 2')).toBeInTheDocument();
+    expect(screen.getByText('One developer, one weekend.')).toBeInTheDocument();
+    // Fully visible: the mock SVG's nodes are never ghosted for timelines.
+    expect(container.querySelectorAll('.ghost')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Next stage' }));
+    expect(await screen.findByText('Stage 2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('v1.0 ships.')).toBeInTheDocument();
+    expect(container.querySelectorAll('.ghost')).toHaveLength(0);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

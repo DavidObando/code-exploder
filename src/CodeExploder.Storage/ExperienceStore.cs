@@ -310,6 +310,29 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<int> GetNextOrdAsync(Guid experienceId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select coalesce(max(ord), -1) + 1 from sections where experience_id = $1");
+        cmd.Parameters.AddWithValue(experienceId);
+        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>True when the session's latest experience already has story chapters.</summary>
+    public async Task<bool> HasStorySectionsAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select 1 from sections sec
+            join experiences e on e.id = sec.experience_id
+            where e.session_id = $1 and sec.kind = 'story'
+              and e.version = (select max(version) from experiences e2 where e2.session_id = $1)
+            limit 1
+            """);
+        cmd.Parameters.AddWithValue(sessionId);
+        return await cmd.ExecuteScalarAsync(ct) is not null;
+    }
+
     public async Task<int> CountUnreadySectionsAsync(Guid experienceId, CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand(
