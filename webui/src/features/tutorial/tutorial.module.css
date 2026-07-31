@@ -188,6 +188,8 @@ a.tocRow:hover {
   flex-direction: column;
   overflow-y: auto;
   min-width: 0;
+  /* Diagram blocks measure this column to break out of the reading measure. */
+  container-type: inline-size;
 }
 
 .reading {

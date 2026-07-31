@@ -190,6 +190,11 @@
   background: var(--bg-1);
   margin: 0 0 var(--space-4);
   overflow: hidden;
+  /* Break out of the 760px reading measure: prose keeps its comfortable width,
+     diagrams get the monitor's real estate (centered, capped at 1400px). */
+  --diagram-width: min(1400px, calc(100cqw - 2 * var(--space-6)));
+  width: var(--diagram-width);
+  margin-inline: calc((100% - var(--diagram-width)) / 2);
 }
 
 .diagramTitle {
@@ -207,7 +212,10 @@
 }
 
 .diagramCanvas svg {
-  max-width: 100%;
+  /* Scale to the (broken-out) container — mermaid SVGs scale via viewBox, so this
+     is what makes diagram text legible; !important beats mermaid's inline max-width. */
+  width: 100% !important;
+  max-width: none !important;
   height: auto;
 }
 
