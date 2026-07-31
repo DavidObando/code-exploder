@@ -181,6 +181,9 @@ export function SectionNav({
           {completed}/{total} completed
           {minutesLeft > 0 && ` · ~${minutesLeft} min left`}
         </div>
+        <Link to={`/sessions/${sessionId}/progress`} className={styles.tocVitalsLink}>
+          Repository vitals ↗
+        </Link>
       </div>
       {sections.map((entry) => (
         <Row

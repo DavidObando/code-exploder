@@ -57,6 +57,19 @@
   margin-top: var(--space-1);
 }
 
+/* Back to the analysis report (stage log + repository-vitals card). */
+.tocVitalsLink {
+  display: inline-block;
+  font: var(--type-caption);
+  color: var(--accent);
+  text-decoration: none;
+  margin-top: var(--space-2);
+}
+
+.tocVitalsLink:hover {
+  text-decoration: underline;
+}
+
 .tocRow {
   display: flex;
   align-items: baseline;
