@@ -165,6 +165,93 @@ public sealed class SessionStore(NpgsqlDataSource dataSource)
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>
+    /// Resets a failed session for a fresh run: repoints it at a brand-new analysis and
+    /// deletes the old one (the cascade wipes files/chunks/summaries/experiences), clears
+    /// the session's event log, and recovers the original acquire payload's gitRef so the
+    /// retry targets the same ref. Returns null when the session isn't failed (the status
+    /// is re-checked under lock so concurrent retries enqueue exactly one acquire).
+    /// </summary>
+    public async Task<(Guid AnalysisId, string? GitRef)?> RetryAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        Guid oldAnalysisId;
+        Guid repoId;
+        string kind;
+        int? prNumber;
+        await using (var find = new NpgsqlCommand(
+            """
+            select a.id, a.repo_id, a.kind, a.pr_number
+            from sessions s join analyses a on a.id = s.analysis_id
+            where s.id = $1 and s.status = 'failed'
+            for update of s
+            """, conn, tx))
+        {
+            find.Parameters.AddWithValue(sessionId);
+            await using var reader = await find.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+            {
+                return null;
+            }
+
+            oldAnalysisId = reader.GetGuid(0);
+            repoId = reader.GetGuid(1);
+            kind = reader.GetString(2);
+            prNumber = reader.IsDBNull(3) ? null : reader.GetInt32(3);
+        }
+
+        string? gitRef = null;
+        await using (var refCmd = new NpgsqlCommand(
+            "select payload->>'gitRef' from jobs where analysis_id = $1 and job_type = 'acquire' order by created_at limit 1",
+            conn, tx))
+        {
+            refCmd.Parameters.AddWithValue(oldAnalysisId);
+            gitRef = await refCmd.ExecuteScalarAsync(ct) as string;
+        }
+
+        var newAnalysisId = Guid.NewGuid();
+        await using (var insert = new NpgsqlCommand(
+            "insert into analyses (id, repo_id, kind, pr_number) values ($1, $2, $3, $4)", conn, tx))
+        {
+            insert.Parameters.AddWithValue(newAnalysisId);
+            insert.Parameters.AddWithValue(repoId);
+            insert.Parameters.AddWithValue(kind);
+            insert.Parameters.AddWithValue((object?)prNumber ?? DBNull.Value);
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var repoint = new NpgsqlCommand(
+            "update sessions set analysis_id = $2, status = 'queued', failure_reason = null where id = $1", conn, tx))
+        {
+            repoint.Parameters.AddWithValue(sessionId);
+            repoint.Parameters.AddWithValue(newAnalysisId);
+            await repoint.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var jobs = new NpgsqlCommand("delete from jobs where analysis_id = $1", conn, tx))
+        {
+            jobs.Parameters.AddWithValue(oldAnalysisId);
+            await jobs.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var events = new NpgsqlCommand("delete from pipeline_events where session_id = $1", conn, tx))
+        {
+            events.Parameters.AddWithValue(sessionId);
+            await events.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var old = new NpgsqlCommand("delete from analyses where id = $1", conn, tx))
+        {
+            old.Parameters.AddWithValue(oldAnalysisId);
+            await old.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+        return (newAnalysisId, gitRef);
+    }
+
     public async Task SetSessionStatusAsync(
         Guid sessionId, string status, string? failureReason = null, CancellationToken ct = default)
     {

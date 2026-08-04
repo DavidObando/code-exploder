@@ -65,6 +65,9 @@ export const api = {
   getSession: (id: string) => request<SessionSummary>(`/api/sessions/${encodeURIComponent(id)}`),
   deleteSession: (id: string) =>
     request<void>(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** Re-runs a failed session from scratch. 409 (ApiError) when it isn't failed. */
+  retrySession: (id: string) =>
+    request<SessionSummary>(`/api/sessions/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
   getAnalysis: (id: string) =>
     request<AnalysisSnapshot>(`/api/sessions/${encodeURIComponent(id)}/analysis`),
   /** 404 (ApiError) while the analysis hasn't planned sections yet. */

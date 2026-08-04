@@ -26,7 +26,7 @@
 | `/api/sessions` | POST | `{url, gitRef?}` — server parses repo vs PR URL; 400 on unparseable/non-GitHub/private | `201 SessionSummary` (status `queued`) |
 | `/api/sessions/{id}` | GET | — | summary + `{commitSha, experienceVersion, analyzedAt}` |
 | `/api/sessions/{id}` | DELETE | — | `204` (cascades content, chunks, threads) |
-| `/api/sessions/{id}/retry` | POST | — | `202` (failed → queued) |
+| `/api/sessions/{id}/retry` | POST | — | `200 SessionSummary` — failed → queued on a fresh analysis (same gitRef); `409` when not failed |
 | `/api/sessions/{id}/refresh` | POST | — | `202` — re-analyze at latest ref → experience v(n+1); progress carries over by slug |
 | `/api/sessions/{id}/cancel` | POST | — | `202` |
 

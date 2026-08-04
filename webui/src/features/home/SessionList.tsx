@@ -17,7 +17,17 @@ const statusGlyph: Record<SessionStatus, { glyph: string; color: string }> = {
   failed: { glyph: '○', color: 'var(--error)' },
 };
 
-function SessionRow({ session, onDelete }: { session: SessionSummary; onDelete: () => void }) {
+function SessionRow({
+  session,
+  onDelete,
+  onRetry,
+  retrying,
+}: {
+  session: SessionSummary;
+  onDelete: () => void;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
   const { glyph, color } = statusGlyph[session.status];
   const { completedSections, totalSections } = session.progress;
   // No sections exist yet in M1 ({0,0}); hide the completion bar rather than
@@ -43,6 +53,20 @@ function SessionRow({ session, onDelete }: { session: SessionSummary; onDelete: 
         <div className={styles.miniTrack} aria-hidden="true">
           <div className={styles.miniFill} style={{ width: `${percent}%` }} />
         </div>
+      )}
+      {session.status === 'failed' && (
+        <button
+          className={styles.sessionRetry}
+          aria-label={`Retry ${session.title}`}
+          disabled={retrying}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRetry();
+          }}
+        >
+          ↻
+        </button>
       )}
       <button
         className={styles.sessionDelete}
@@ -78,6 +102,13 @@ export function SessionList() {
       toast('error', 'Delete failed', err instanceof ApiError ? err.message : 'Unexpected error'),
   });
 
+  const retry = useMutation({
+    mutationFn: (id: string) => api.retrySession(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+    onError: (err) =>
+      toast('error', 'Retry failed', err instanceof ApiError ? err.message : 'Unexpected error'),
+  });
+
   const sorted = [...(sessions.data ?? [])].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
@@ -91,7 +122,13 @@ export function SessionList() {
         <p className={styles.empty}>No sessions yet — explode your first codebase.</p>
       )}
       {sorted.map((s) => (
-        <SessionRow key={s.id} session={s} onDelete={() => setPendingDelete(s)} />
+        <SessionRow
+          key={s.id}
+          session={s}
+          onDelete={() => setPendingDelete(s)}
+          onRetry={() => retry.mutate(s.id)}
+          retrying={retry.isPending && retry.variables === s.id}
+        />
       ))}
       {pendingDelete && (
         <ConfirmDialog

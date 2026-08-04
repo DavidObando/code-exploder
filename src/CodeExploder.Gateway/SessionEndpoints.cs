@@ -92,6 +92,45 @@ public static class SessionEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status404NotFound);
 
+        app.MapPost("/api/sessions/{id:guid}/retry", async (
+                Guid id, HttpContext http, SessionStore store, JobQueue queue, CancellationToken ct) =>
+            {
+                var userId = await ResolveUserAsync(http, store, ct);
+                var session = await store.GetForUserAsync(id, userId, ct);
+                if (session is null)
+                {
+                    return Results.NotFound();
+                }
+
+                // RetryAsync re-checks the status under lock, so a concurrent retry
+                // (or a race with the pipeline finishing) enqueues at most one acquire.
+                if (session.Status != SessionStatus.Failed || await store.RetryAsync(id, ct) is not { } retry)
+                {
+                    return Results.Conflict(new ErrorResponse("Only failed sessions can be retried."));
+                }
+
+                await queue.EnqueueAsync(
+                    AcquireJob,
+                    JsonSerializer.Serialize(new
+                    {
+                        analysisId = retry.AnalysisId,
+                        sessionId = id,
+                        owner = session.RepoOwner,
+                        name = session.RepoName,
+                        prNumber = session.PrNumber,
+                        gitRef = retry.GitRef,
+                    }),
+                    analysisId: retry.AnalysisId,
+                    ct: ct);
+
+                var updated = await store.GetForUserAsync(id, userId, ct);
+                return Results.Ok(ToSummary(updated!));
+            })
+            .RequireAuthorization()
+            .Produces<SessionSummary>()
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
         app.MapGet("/api/sessions/{id:guid}/analysis", async (
                 Guid id, HttpContext http, SessionStore store, AnalysisStore analyses,
                 NpgsqlDataSource db, CancellationToken ct) =>

@@ -90,6 +90,36 @@
   color: var(--error);
 }
 
+/* Retry (failed rows only) sits just left of the delete control. */
+.sessionRetry {
+  position: absolute;
+  top: var(--space-2);
+  right: calc(var(--space-2) + 26px);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: var(--type-caption);
+  padding: 2px 6px;
+  border-radius: var(--radius-chip);
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
+}
+
+.sessionRow:hover .sessionRetry,
+.sessionRetry:focus-visible {
+  opacity: 1;
+}
+
+.sessionRetry:hover {
+  color: var(--accent);
+}
+
+.sessionRetry:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
 /* Thin completion bar — square and opaque per the Bar rule. */
 .miniTrack {
   height: 3px;
