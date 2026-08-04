@@ -35,7 +35,9 @@ COPY seeds/ ./seeds/
 # carry in the shared image.
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r codeexploder && useradd -r -g codeexploder codeexploder \
+    # uid/gid 1000 matches the deployment's bind-mount ownership convention
+    # (puid/pgid 1000); a system uid here broke workspace writes in production.
+    && groupadd -g 1000 codeexploder && useradd -u 1000 -g codeexploder codeexploder \
     && mkdir -p /var/lib/code-exploder/workspaces \
     && chown -R codeexploder:codeexploder /var/lib/code-exploder
 USER codeexploder
