@@ -37,8 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && rm -rf /var/lib/apt/lists/* \
     # uid/gid 1000 matches the deployment's bind-mount ownership convention
     # (puid/pgid 1000); a system uid here broke workspace writes in production.
-    && groupadd -g 1000 codeexploder && useradd -u 1000 -g codeexploder codeexploder \
+    # The Ubuntu-based aspnet image already has uid/gid 1000 ("ubuntu") — adopt
+    # and rename it rather than colliding with it.
+    && (getent group 1000 >/dev/null && groupmod -n codeexploder "$(getent group 1000 | cut -d: -f1)" \
+        || groupadd -g 1000 codeexploder) \
+    && (getent passwd 1000 >/dev/null && usermod -l codeexploder -d /var/lib/code-exploder "$(getent passwd 1000 | cut -d: -f1)" \
+        || useradd -u 1000 -g codeexploder -d /var/lib/code-exploder codeexploder) \
     && mkdir -p /var/lib/code-exploder/workspaces \
-    && chown -R codeexploder:codeexploder /var/lib/code-exploder
+    && chown -R 1000:1000 /var/lib/code-exploder
 USER codeexploder
 ENTRYPOINT ["sh", "-c", "exec dotnet ${PROJECT_DLL}"]
