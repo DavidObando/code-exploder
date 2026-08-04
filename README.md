@@ -42,6 +42,16 @@ GPU-co-residency budget is documented in [docs/06](docs/06-llm-strategy.md).
 
 ### Dev quickstart
 
+Start the complete local development stack with:
+
+```bash
+./dev.sh
+```
+
+The script starts PostgreSQL, the gateway, both workers, the orchestrator, and the
+Vite development server. Press Ctrl+C to stop everything it started. To run the
+services individually:
+
 ```bash
 docker compose -f deploy/compose.yaml up postgres -d   # Postgres 17 + pgvector on :5433
 dotnet run --project src/CodeExploder.Gateway           # API + hub on :5080 (DevBypass auth)
