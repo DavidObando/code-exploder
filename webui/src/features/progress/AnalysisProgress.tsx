@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../../api/client';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, ApiError } from '../../api/client';
+import { useUi } from '../../store/ui';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import type {
   AnalysisNarrationData,
   AnalysisProgressData,
@@ -23,11 +25,36 @@ interface LiveNarrationLine {
 
 export function AnalysisProgress() {
   const { id = '' } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const toast = useUi((s) => s.toast);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const session = useQuery({
     queryKey: ['session', id],
     queryFn: () => api.getSession(id),
     enabled: id !== '',
+  });
+
+  const retry = useMutation({
+    mutationFn: () => api.retrySession(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['session', id] });
+      void queryClient.invalidateQueries({ queryKey: ['analysis', id] });
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+    onError: (err) =>
+      toast('error', 'Retry failed', err instanceof ApiError ? err.message : 'Unexpected error'),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.deleteSession(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      navigate('/');
+    },
+    onError: (err) =>
+      toast('error', 'Delete failed', err instanceof ApiError ? err.message : 'Unexpected error'),
   });
 
   const analysis = useQuery({
@@ -138,7 +165,35 @@ export function AnalysisProgress() {
           <p className={styles.failureReason}>
             {session.data.failureReason ?? 'No failure reason was recorded.'}
           </p>
+          <div className={styles.failureActions}>
+            <button
+              className={ui.buttonPrimary}
+              onClick={() => retry.mutate()}
+              disabled={retry.isPending}
+            >
+              ↻ Retry analysis
+            </button>
+            <button
+              className={ui.buttonDangerSolid}
+              onClick={() => setConfirmDelete(true)}
+              disabled={remove.isPending}
+            >
+              ✕ Delete session
+            </button>
+          </div>
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete session?"
+          body={`"${session.data.title}" and its analysis will be removed. This cannot be undone.`}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            remove.mutate();
+          }}
+        />
       )}
 
       <StageList stages={snapshot.stages} live={liveProgress} />

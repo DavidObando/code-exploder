@@ -39,6 +39,18 @@
   color: var(--error);
 }
 
+.buttonDangerSolid {
+  composes: button;
+  background: var(--error);
+  border-color: var(--error);
+  color: #ffffff;
+}
+
+.buttonDangerSolid:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 85%, black);
+  border-color: color-mix(in srgb, var(--error) 85%, black);
+}
+
 .buttonGhost {
   composes: button;
   background: transparent;
