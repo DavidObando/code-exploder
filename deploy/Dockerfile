@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     # and rename it rather than colliding with it.
     && (getent group 1000 >/dev/null && groupmod -n codeexploder "$(getent group 1000 | cut -d: -f1)" \
         || groupadd -g 1000 codeexploder) \
-    && (getent passwd 1000 >/dev/null && usermod -l codeexploder -d /var/lib/code-exploder "$(getent passwd 1000 | cut -d: -f1)" \
+    && (getent passwd 1000 >/dev/null && usermod -l codeexploder -d /var/lib/code-exploder -G "" "$(getent passwd 1000 | cut -d: -f1)" \
         || useradd -u 1000 -g codeexploder -d /var/lib/code-exploder codeexploder) \
     && mkdir -p /var/lib/code-exploder/workspaces \
     && chown -R 1000:1000 /var/lib/code-exploder
