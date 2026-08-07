@@ -9,6 +9,7 @@ import ui from '../../components/ui.module.css';
 import { ChatPanel } from '../chat/ChatPanel';
 import { SectionNav } from './SectionNav';
 import { PacingBar } from './PacingBar';
+import { DownloadButton } from './export/DownloadButton';
 import styles from './tutorial.module.css';
 
 export interface TutorialContext {
@@ -109,6 +110,7 @@ export function TutorialLayout() {
       <SectionNav toc={experience.data} session={session.data} currentSlug={sectionSlug ?? null} />
       <div className={styles.content}>
         <div className={styles.contentHeader}>
+          <DownloadButton toc={experience.data} session={session.data} />
           <button
             className={ui.buttonGhost}
             onClick={() => toggleChat(!chatOpen)}
