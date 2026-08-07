@@ -519,6 +519,32 @@
         }
       }
     },
+    "/api/sessions/{id}/export.html": {
+      "get": {
+        "tags": [
+          "CodeExploder.Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/quizzes/{quizId}": {
       "get": {
         "tags": [

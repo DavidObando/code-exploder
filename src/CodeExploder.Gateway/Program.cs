@@ -160,6 +160,7 @@ app.MapHub<CodeExploder.Gateway.Hubs.SessionHub>("/hubs/session").RequireAuthori
 SessionEndpoints.Map(app);
 ExperienceEndpoints.Map(app);
 DeepDiveEndpoints.Map(app);
+ExportEndpoints.Map(app);
 QuizEndpoints.Map(app);
 QaEndpoints.Map(app);
 SystemEndpoints.Map(app);
