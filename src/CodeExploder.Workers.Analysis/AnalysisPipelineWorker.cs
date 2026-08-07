@@ -16,6 +16,8 @@ public sealed class AnalysisPipelineWorker(
     SessionStore sessions,
     AnalysisStore analyses,
     ExperienceStore experiences,
+    ExplosionStore explosions,
+    ExplosionOptions explosionOptions,
     ISessionEventBus bus,
     GitCli git,
     GitHubApiClient gitHubApi,
@@ -28,7 +30,12 @@ public sealed class AnalysisPipelineWorker(
     public const string PlanJob = "plan";
 
     private static readonly string[] JobTypes =
-        [AcquireJob, RepoMapJob, ChunkJob, PlanJob, LlmJobTypes.HistoryMine];
+        [AcquireJob, RepoMapJob, ChunkJob, PlanJob, LlmJobTypes.HistoryMine, LlmJobTypes.ExplodeScope];
+
+    /// <summary>Jobs that run after a session is served; their failure must never flip
+    /// a finished session to failed (the tutorial is already in front of the user).</summary>
+    private static readonly HashSet<string> PostCompletionJobTypes =
+        [LlmJobTypes.HistoryMine, LlmJobTypes.ExplodeScope];
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -71,11 +78,13 @@ public sealed class AnalysisPipelineWorker(
                     var terminal = ex is AcquireException || job.Attempts >= job.MaxAttempts;
                     await queue.FailAsync(job.Id, ex.Message, CancellationToken.None);
 
-                    // Post-completion jobs (the origin story's mine) must never flip a
-                    // finished session to failed — the tutorial is already served.
-                    if (terminal && job.JobType != LlmJobTypes.HistoryMine)
+                    if (terminal && !PostCompletionJobTypes.Contains(job.JobType))
                     {
                         await MarkRunFailedAsync(job, ex is AcquireException ? ex.Message : "Analysis failed unexpectedly.");
+                    }
+                    else if (terminal && job.JobType == LlmJobTypes.ExplodeScope)
+                    {
+                        await MarkDiveFailedAsync(job, ex.Message);
                     }
                 }
             }
@@ -101,6 +110,9 @@ public sealed class AnalysisPipelineWorker(
                 break;
             case LlmJobTypes.HistoryMine:
                 await RunHistoryMineAsync(payload, ct);
+                break;
+            case LlmJobTypes.ExplodeScope:
+                await RunExplodeScopeAsync(payload, ct);
                 break;
             default:
                 throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
@@ -385,6 +397,145 @@ public sealed class AnalysisPipelineWorker(
         }
     }
 
+    /// <summary>
+    /// M10, the dive's deterministic pass: recover the checkout and repo map if reaped,
+    /// resolve the scope component from its stored name chain, detect sub-components,
+    /// and fan out summaries joined by synthesize-scope on the gpu lane. All jobs of a
+    /// dive inherit its priority (eager stays polite, on-demand stays snappy).
+    /// </summary>
+    private async Task RunExplodeScopeAsync(Payload p, CancellationToken ct)
+    {
+        var explosionId = p.ExplosionId!.Value;
+        await explosions.SetStatusAsync(explosionId, ExplosionStatus.Running, ct: ct);
+        Narrate(p, $"Zooming into {p.ComponentName}…");
+
+        var checkout = CheckoutPath(p.AnalysisId);
+        if (!Directory.Exists(checkout))
+        {
+            // The workspace cache may have been reaped; a fresh clone restores it.
+            await git.CloneAsync($"https://github.com/{p.Owner}/{p.Name}", checkout, p.GitRef, p.PrNumber, ct);
+        }
+
+        RepoMap map;
+        if (File.Exists(RepoMapPath(p.AnalysisId)))
+        {
+            map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        }
+        else
+        {
+            var stats = await git.CollectStatsAsync(checkout, ct);
+            map = new RepoMapper().Map(checkout, stats);
+            await File.WriteAllTextAsync(RepoMapPath(p.AnalysisId), JsonSerializer.Serialize(map, JsonOpts), ct);
+        }
+
+        var chain = await BuildNameChainAsync(p.ComponentId!.Value, ct);
+        var component = ComponentDetector.ResolveChain(map, chain, explosionOptions.MaxSubComponents)
+            ?? throw new InvalidOperationException($"Scope not found in map: {string.Join(" / ", chain)}");
+
+        var subs = ComponentDetector.DetectWithin(map, component, explosionOptions.MaxSubComponents);
+        var priority = p.Priority ?? 0;
+        var payloadJson = JsonSerializer.Serialize(new
+        {
+            analysisId = p.AnalysisId,
+            sessionId = p.SessionId,
+            explosionId,
+            scopeComponentId = p.ComponentId,
+            scopeComponentName = p.ComponentName,
+            explosionDepth = p.ExplosionDepth,
+            deepDiveSectionId = p.DeepDiveSectionId,
+            priority,
+            owner = p.Owner,
+            name = p.Name,
+            gitRef = p.GitRef,
+        }, JsonOpts);
+
+        if (subs.Count == 0)
+        {
+            Narrate(p, $"{p.ComponentName} is one tight unit — dissecting it whole");
+            await queue.EnqueueAsync(
+                LlmJobTypes.SynthesizeScope, payloadJson, priority, analysisId: p.AnalysisId, ct: ct);
+            return;
+        }
+
+        var stored = await analyses.InsertSubComponentsAsync(
+            p.AnalysisId, p.ComponentId.Value, p.ExplosionDepth ?? 1, subs, ct);
+        Narrate(p, $"Found {stored.Count} sub-component(s) inside {p.ComponentName}: "
+            + string.Join(", ", stored.Take(4).Select(s => s.Name))
+            + (stored.Count > 4 ? ", …" : ""));
+
+        var synthesizeId = await queue.EnqueueBlockedAsync(
+            LlmJobTypes.SynthesizeScope, payloadJson, stored.Count, priority,
+            analysisId: p.AnalysisId, ct: ct);
+        foreach (var (subComponentId, subComponentName) in stored)
+        {
+            await queue.EnqueueAsync(
+                LlmJobTypes.SummarizeComponent,
+                JsonSerializer.Serialize(new
+                {
+                    analysisId = p.AnalysisId,
+                    sessionId = p.SessionId,
+                    componentId = subComponentId,
+                    componentName = subComponentName,
+                    explosionId,
+                    scopeComponentId = p.ComponentId,
+                    scopeComponentName = p.ComponentName,
+                    explosionDepth = p.ExplosionDepth,
+                    deepDiveSectionId = p.DeepDiveSectionId,
+                    priority,
+                }, JsonOpts),
+                priority,
+                analysisId: p.AnalysisId,
+                unblocksJobId: synthesizeId,
+                ct: ct);
+        }
+    }
+
+    /// <summary>Walks parent_component_id links into [top-level, …, target] names.</summary>
+    private async Task<IReadOnlyList<string>> BuildNameChainAsync(Guid componentId, CancellationToken ct)
+    {
+        var chain = new List<string>();
+        Guid? current = componentId;
+        while (current is { } id)
+        {
+            var row = await analyses.GetComponentAsync(id, ct)
+                ?? throw new InvalidOperationException($"Component row missing: {id}");
+            chain.Insert(0, row.Name);
+            current = row.ParentComponentId;
+        }
+
+        return chain;
+    }
+
+    private async Task MarkDiveFailedAsync(QueuedJob job, string reason)
+    {
+        try
+        {
+            var p = JsonSerializer.Deserialize<Payload>(job.PayloadJson, JsonOpts)!;
+            if (p.ExplosionId is { } explosionId)
+            {
+                await explosions.SetStatusAsync(explosionId, ExplosionStatus.Failed, reason, finished: true);
+            }
+
+            if (p.DeepDiveSectionId is { } sectionId)
+            {
+                await experiences.SetSectionStatusAsync(sectionId, SectionState.Failed);
+            }
+
+            bus.Publish(p.SessionId, SessionEventKinds.DeepDiveFailed, new
+            {
+                explosionId = p.ExplosionId,
+                componentId = p.ComponentId,
+                sectionId = p.DeepDiveSectionId,
+                reason,
+            });
+            Narrate(p, $"Deep dive into {p.ComponentName} failed");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to mark dive failed for job {JobId}", job.Id);
+        }
+    }
+
     private string HistoryPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "history.json");
 
     private string CheckoutPath(Guid analysisId) => Path.Combine(_workspacesRoot, analysisId.ToString(), "repo");
@@ -418,5 +569,16 @@ public sealed class AnalysisPipelineWorker(
     }
 
     public sealed record Payload(
-        Guid AnalysisId, Guid SessionId, string Owner, string Name, int? PrNumber, string? GitRef);
+        Guid AnalysisId,
+        Guid SessionId,
+        string Owner,
+        string Name,
+        int? PrNumber,
+        string? GitRef,
+        Guid? ExplosionId = null,
+        Guid? ComponentId = null,
+        string? ComponentName = null,
+        int? ExplosionDepth = null,
+        Guid? DeepDiveSectionId = null,
+        int? Priority = null);
 }

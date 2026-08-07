@@ -14,7 +14,10 @@ namespace CodeExploder.Pipeline;
 /// </summary>
 public static partial class CitationResolver
 {
-    private const int MaxCitedLines = 80;
+    // Tight enough to read as a surgical excerpt (a method or small type), not a
+    // page. The model tends to cite from line 1 because it only sees file heads;
+    // the preamble skip below keeps that from becoming a wall of usings.
+    private const int MaxCitedLines = 36;
 
     public static IReadOnlyList<(string Type, string DataJson)> Resolve(
         string markdown, string workspaceRoot, RepoMap map, ILogger logger)
@@ -79,13 +82,73 @@ public static partial class CitationResolver
             }
 
             start = Math.Clamp(start, 1, lines.Length);
-            end = Math.Clamp(end, start, Math.Min(lines.Length, start + MaxCitedLines - 1));
+            end = Math.Clamp(end, start, lines.Length);
+
+            // Surgical excerpts: when the citation opens inside the file's
+            // license/usings preamble (the model anchors at line 1 because it only
+            // saw the file head), advance to the first real declaration so the
+            // snippet shows code rather than a copyright block. Only advance when
+            // the cited range actually reaches past the preamble.
+            var firstReal = FirstSubstantiveLine(lines);
+            if (start < firstReal && firstReal <= end)
+            {
+                start = firstReal;
+            }
+
+            end = Math.Min(end, Math.Min(lines.Length, start + MaxCitedLines - 1));
             return string.Join('\n', lines[(start - 1)..end]);
         }
         catch (IOException)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 1-based index of the first line past the leading license / using / preprocessor
+    /// preamble — where real declarations (namespace, attributes, types) begin. Tuned
+    /// for C-family syntax; returns 1 when no preamble is found (or the head is all
+    /// preamble), so it never advances past everything.
+    /// </summary>
+    private static int FirstSubstantiveLine(string[] lines)
+    {
+        var inBlockComment = false;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var t = lines[i].Trim();
+            if (inBlockComment)
+            {
+                if (t.Contains("*/", StringComparison.Ordinal))
+                {
+                    inBlockComment = false;
+                }
+
+                continue;
+            }
+
+            if (t.Length == 0
+                || t.StartsWith("//", StringComparison.Ordinal)
+                || t.StartsWith('#')
+                || t.StartsWith("using ", StringComparison.Ordinal)
+                || t.StartsWith("global using ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (t.StartsWith("/*", StringComparison.Ordinal))
+            {
+                if (!t.Contains("*/", StringComparison.Ordinal))
+                {
+                    inBlockComment = true;
+                }
+
+                continue;
+            }
+
+            return i + 1;
+        }
+
+        return 1;
     }
 
     [GeneratedRegex(@"\{\{cite:([^:{}]+):(\d{1,6})-(\d{1,6})\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]

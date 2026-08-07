@@ -16,6 +16,8 @@ public static class PromptLibrary
     public const string Story = "story.v1";
     public const string Grade = "grade.v1";
     public const string Repair = "repair.v1";
+    public const string ScopeArchitecture = "scope-architecture.v1";
+    public const string ScopeSection = "scope-section.v1";
 
     private static readonly Dictionary<string, string> Cache = [];
 

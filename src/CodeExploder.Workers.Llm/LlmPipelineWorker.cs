@@ -18,6 +18,9 @@ public sealed class LlmPipelineWorker(
     SessionStore sessions,
     AnalysisStore analyses,
     ExperienceStore experiences,
+    ExplosionStore explosions,
+    ExplosionLauncher explosionLauncher,
+    ExplosionOptions explosionOptions,
     QuizStore quizzes,
     QaStore qaStore,
     CodeExploder.Qa.AnswerLoop answerLoop,
@@ -34,6 +37,7 @@ public sealed class LlmPipelineWorker(
         LlmJobTypes.SummarizeComponent, LlmJobTypes.Synthesize, LlmJobTypes.TutorialSection,
         LlmJobTypes.FinalizeExperience, LlmJobTypes.QuizGenerate, LlmJobTypes.GradeQuiz,
         LlmJobTypes.QaAnswer, LlmJobTypes.StorySection,
+        LlmJobTypes.SynthesizeScope, LlmJobTypes.FinalizeScope,
     ];
 
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
@@ -122,6 +126,12 @@ public sealed class LlmPipelineWorker(
             case LlmJobTypes.StorySection:
                 await RunStorySectionAsync(p, ct);
                 break;
+            case LlmJobTypes.SynthesizeScope:
+                await RunSynthesizeScopeAsync(p, ct);
+                break;
+            case LlmJobTypes.FinalizeScope:
+                await RunFinalizeScopeAsync(p, ct);
+                break;
             default:
                 throw new InvalidOperationException($"Unhandled job type: {job.JobType}");
         }
@@ -129,6 +139,12 @@ public sealed class LlmPipelineWorker(
 
     private async Task RunSummarizeAsync(Payload p, CancellationToken ct)
     {
+        if (p.ExplosionId is not null)
+        {
+            await RunSummarizeSubComponentAsync(p, ct);
+            return;
+        }
+
         var map = await LoadRepoMapAsync(p.AnalysisId, ct);
         var components = new ComponentDetector().Detect(map);
         var component = components.FirstOrDefault(c => c.Name == p.ComponentName)
@@ -149,6 +165,35 @@ public sealed class LlmPipelineWorker(
         var done = await analyses.CountComponentSummariesAsync(p.AnalysisId, ct);
         Narrate(p, $"Summarized component: {p.ComponentName}");
         Progress(p, AnalysisStages.Summarize, done * 100.0 / Math.Max(1, components.Count), $"{done}/{components.Count} components");
+    }
+
+    /// <summary>M10: summarize ONE sub-component of an exploding scope. No Stage/Progress
+    /// emissions — the session is already finalized and its stage bars must not move.</summary>
+    private async Task RunSummarizeSubComponentAsync(Payload p, CancellationToken ct)
+    {
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var chain = await BuildNameChainAsync(p.ComponentId!.Value, ct);
+        var subComponent = ComponentDetector.ResolveChain(map, chain, explosionOptions.MaxSubComponents)
+            ?? throw new InvalidOperationException($"Sub-component not found in map: {string.Join(" / ", chain)}");
+
+        var siblings = (await analyses.GetSubComponentsAsync(p.ScopeComponentId!.Value, ct))
+            .Select(c => c.Name).ToList();
+        var parentSummary = await analyses.GetComponentSummaryAsync(p.AnalysisId, p.ScopeComponentId.Value, ct);
+
+        var material = ContextPacker.ForSubComponent(
+            CheckoutPath(p.AnalysisId), map, subComponent, siblings,
+            p.ScopeComponentName ?? chain[0], parentSummary?.ProseMd);
+        var knownFiles = map.Files.Where(f => !f.Excluded).Select(f => f.Path).ToHashSet(StringComparer.Ordinal);
+        var componentNames = siblings.Append(p.ScopeComponentName ?? string.Empty)
+            .Where(n => n.Length > 0).ToHashSet(StringComparer.Ordinal);
+
+        var summarizer = new ComponentSummarizer(llm, LoggerFor<ComponentSummarizer>());
+        var result = await summarizer.SummarizeAsync(material, knownFiles, componentNames, ct);
+
+        await analyses.InsertSummaryAsync(
+            p.AnalysisId, "component", p.ComponentId, result.ProseMd, result.StructuredJson,
+            llmOptions.Model, PromptLibrary.ComponentSummary, ct);
+        Narrate(p, $"Dissected {p.ComponentName}");
     }
 
     private async Task RunSynthesizeAsync(Payload p, CancellationToken ct)
@@ -256,6 +301,12 @@ public sealed class LlmPipelineWorker(
 
     private async Task RunSectionAsync(Payload p, CancellationToken ct)
     {
+        if (p.ExplosionId is not null)
+        {
+            await RunScopeSectionAsync(p, ct);
+            return;
+        }
+
         await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Generating, ct);
         Narrate(p, $"Writing section: {p.Title}");
 
@@ -320,7 +371,7 @@ public sealed class LlmPipelineWorker(
 
         var (ready, total) = await sessions.IncrementSectionsReadyAsync(p.AnalysisId, ct);
         bus.Publish(p.SessionId, SessionEventKinds.SectionReady,
-            new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal });
+            new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal, depth = 0, parentSectionId = (Guid?)null });
         Progress(p, AnalysisStages.Sections, total == 0 ? 100 : ready * 100.0 / total, $"{ready}/{total} sections");
 
         // S7 rides behind the section, non-blocking: quizzes are enhancement, never a
@@ -419,6 +470,378 @@ public sealed class LlmPipelineWorker(
 
         Stage(p, AnalysisStages.Finalize, StageState.Done);
         bus.Publish(p.SessionId, SessionEventKinds.AnalysisCompleted, new { });
+
+        // M10 eager hook: auto-explode the most critical scopes at idle priority.
+        // Best-effort by design — eager explosion must never fail finalize.
+        try
+        {
+            await LaunchEagerDivesAsync(p, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Eager deep-dive launch failed for analysis {AnalysisId}", p.AnalysisId);
+        }
+    }
+
+    /// <summary>Ranks top-level components by criticality and launches the top-K as
+    /// eager dives under the architecture section. Repo sessions only; never recurses.</summary>
+    private async Task LaunchEagerDivesAsync(Payload p, CancellationToken ct)
+    {
+        if (explosionOptions.EagerTopK <= 0 || await TryLoadPrDiffAsync(p.AnalysisId, ct) is not null)
+        {
+            return;
+        }
+
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var components = new ComponentDetector().Detect(map);
+        var summaries = (await analyses.GetComponentSummariesAsync(p.AnalysisId, ct))
+            .ToDictionary(s => s.Component, s => s.StructuredJson, StringComparer.Ordinal)
+            as IReadOnlyDictionary<string, string?>;
+        var ranked = CriticalityScorer.Rank(components, map, summaries, explosionOptions.MinScopeFiles);
+        if (ranked.Count == 0)
+        {
+            return;
+        }
+
+        var stored = await analyses.GetTopLevelComponentsAsync(p.AnalysisId, ct);
+        var anchorId = await experiences.GetSectionIdBySlugAsync(p.ExperienceId!.Value, "architecture", ct);
+        foreach (var (componentName, _) in ranked.Take(explosionOptions.EagerTopK))
+        {
+            var row = stored.FirstOrDefault(c => string.Equals(c.Name, componentName, StringComparison.Ordinal));
+            if (row is null)
+            {
+                continue;
+            }
+
+            var launch = await explosionLauncher.LaunchAsync(new ExplosionRequest(
+                p.AnalysisId, p.SessionId, p.ExperienceId.Value,
+                row.Id, row.Name,
+                ExplosionDepth: 1, ParentExplosionId: null,
+                AnchorSectionId: anchorId, SectionDepth: 1,
+                ExplosionTrigger.Eager,
+                p.Owner ?? string.Empty, p.Name ?? string.Empty, p.GitRef), ct);
+            if (launch.Created)
+            {
+                Narrate(p, $"Queued an automatic deep dive into {row.Name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// M10, the dive's join: synthesize the scope's internal architecture, publish the
+    /// deep-dive parent section (overview + diagram) so it's readable early, plan the
+    /// child sections, and fan them out joined by finalize-scope. No Stage/Progress —
+    /// the session is served; only DeepDive*/SectionReady events flow.
+    /// </summary>
+    private async Task RunSynthesizeScopeAsync(Payload p, CancellationToken ct)
+    {
+        var scopeComponentId = p.ScopeComponentId!.Value;
+        var deepDiveSectionId = p.DeepDiveSectionId!.Value;
+        await experiences.SetSectionStatusAsync(deepDiveSectionId, SectionState.Generating, ct);
+        Narrate(p, $"Mapping the inside of {p.ScopeComponentName}…");
+
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var chain = await BuildNameChainAsync(scopeComponentId, ct);
+        var scope = ComponentDetector.ResolveChain(map, chain, explosionOptions.MaxSubComponents)
+            ?? throw new InvalidOperationException($"Scope not found in map: {string.Join(" / ", chain)}");
+
+        var subSummaries = await analyses.GetScopedComponentSummariesAsync(p.AnalysisId, scopeComponentId, ct);
+        var ownSummary = await analyses.GetComponentSummaryAsync(p.AnalysisId, scopeComponentId, ct);
+
+        var synthesizer = new ScopeSynthesizer(llm, LoggerFor<ScopeSynthesizer>());
+        var architecture = await synthesizer.SynthesizeAsync(
+            ContextPacker.ForScopeArchitecture(
+                CheckoutPath(p.AnalysisId), map, scope,
+                ownSummary?.ProseMd, ownSummary?.StructuredJson, subSummaries),
+            ct);
+
+        await analyses.InsertSummaryAsync(
+            p.AnalysisId, "scope", scopeComponentId, architecture.OverviewMd,
+            JsonSerializer.Serialize(architecture, JsonOpts), llmOptions.Model, PromptLibrary.ScopeArchitecture, ct);
+
+        // The parent section is real content: narration-ready overview + scoped map.
+        var blocks = new List<(string Type, string DataJson)>();
+        try
+        {
+            var generator = new DiagramSpecGenerator(llm, LoggerFor<DiagramSpecGenerator>());
+            var diagram = await generator.GenerateAsync("flowchart", architecture, null, ct);
+            blocks.Add((BlockType.Diagram, JsonSerializer.Serialize(new
+            {
+                diagramKind = diagram.Spec.Kind,
+                title = diagram.Spec.Title,
+                mermaid = diagram.Mermaid,
+                stages = diagram.Spec.Stages.Select(s => new
+                {
+                    title = s.Title,
+                    narrationMd = s.NarrationMd,
+                    reveal = new { nodes = s.NodeIds, edges = s.EdgeIndexes },
+                }),
+            }, JsonOpts)));
+        }
+        catch (GenerationException ex)
+        {
+            logger.LogWarning(ex, "Scope diagram failed for {Scope}; continuing text-only", p.ScopeComponentName);
+        }
+
+        blocks.Insert(0, (BlockType.Markdown, JsonSerializer.Serialize(
+            new { md = architecture.OverviewMd }, JsonOpts)));
+        await experiences.CompleteSectionAsync(
+            deepDiveSectionId, $"Inside {p.ScopeComponentName}", 2, blocks, ct);
+
+        var meta = await experiences.GetSectionMetaAsync(deepDiveSectionId, ct)
+            ?? throw new InvalidOperationException("deep-dive section row missing");
+        bus.Publish(p.SessionId, SessionEventKinds.SectionReady, new
+        {
+            sectionId = deepDiveSectionId,
+            slug = meta.Slug,
+            title = $"Deep dive: {p.ScopeComponentName}",
+            ordinal = meta.Ord,
+            depth = meta.Depth,
+            parentSectionId = meta.ParentSectionId,
+        });
+
+        // Plan the children (delete-first keeps a retried dive's slugs stable).
+        await experiences.DeleteChildSectionsAsync(deepDiveSectionId, ct);
+        var outline = new List<(string Slug, string Kind, string Title, string? ScenarioId)>
+        {
+            ($"{meta.Slug}-tour", SectionKind.DeepDiveTour, $"How {p.ScopeComponentName} works inside", null),
+        };
+        var flows = 0;
+        foreach (var scenario in architecture.Scenarios)
+        {
+            if (++flows > 2)
+            {
+                break;
+            }
+
+            outline.Add(($"{meta.Slug}-flow-{flows}", SectionKind.DeepDiveFlow, scenario.Title, scenario.Id));
+        }
+
+        outline.Add(($"{meta.Slug}-interfaces", SectionKind.DeepDiveInterfaces,
+            $"How {p.ScopeComponentName} talks to the rest", null));
+        if (outline.Count > explosionOptions.MaxChildSections)
+        {
+            outline.RemoveRange(explosionOptions.MaxChildSections, outline.Count - explosionOptions.MaxChildSections);
+        }
+
+        var childJobs = new List<Payload>();
+        var ord = await experiences.GetNextOrdAsync(meta.ExperienceId, ct);
+        foreach (var (slug, kind, title, scenarioId) in outline)
+        {
+            var sectionId = await experiences.CreateSectionAsync(
+                meta.ExperienceId, ord, slug, kind, title, string.Empty,
+                meta.Depth + 1, deepDiveSectionId, scopeComponentId, ct);
+            childJobs.Add(p with
+            {
+                ExperienceId = meta.ExperienceId,
+                SectionId = sectionId,
+                Kind = kind,
+                ScenarioId = scenarioId,
+                Ordinal = ord,
+                Slug = slug,
+                Title = title,
+            });
+            ord++;
+        }
+
+        await explosions.SetSectionsTotalAsync(p.ExplosionId!.Value, childJobs.Count, ct);
+        Narrate(p, $"Planned {childJobs.Count} deep-dive section(s) for {p.ScopeComponentName}; writing…");
+
+        var priority = p.Priority ?? 0;
+        var finalizeId = await queue.EnqueueBlockedAsync(
+            LlmJobTypes.FinalizeScope, JsonSerializer.Serialize(p, JsonOpts), childJobs.Count,
+            priority, analysisId: p.AnalysisId, ct: ct);
+        foreach (var childJob in childJobs)
+        {
+            await queue.EnqueueAsync(
+                LlmJobTypes.TutorialSection, JsonSerializer.Serialize(childJob, JsonOpts),
+                priority, analysisId: p.AnalysisId, unblocksJobId: finalizeId, ct: ct);
+        }
+    }
+
+    /// <summary>M10: one deep-dive child section — scoped architecture, scoped
+    /// citations, deeper prompt. Never touches the analyses.sections_* counters.</summary>
+    private async Task RunScopeSectionAsync(Payload p, CancellationToken ct)
+    {
+        await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Generating, ct);
+        Narrate(p, $"Writing deep-dive section: {p.Title}");
+
+        var map = await LoadRepoMapAsync(p.AnalysisId, ct);
+        var scopeComponentId = p.ScopeComponentId!.Value;
+        var chain = await BuildNameChainAsync(scopeComponentId, ct);
+        var scope = ComponentDetector.ResolveChain(map, chain, explosionOptions.MaxSubComponents)
+            ?? throw new InvalidOperationException($"Scope not found in map: {string.Join(" / ", chain)}");
+
+        var architecture = JsonSerializer.Deserialize<ArchitectureDoc>(
+            await analyses.GetScopeSummaryStructuredAsync(p.AnalysisId, scopeComponentId, ct)
+                ?? throw new InvalidOperationException("scoped architecture doc missing"),
+            JsonOpts)!;
+        var subSummaries = await analyses.GetScopedComponentSummariesAsync(p.AnalysisId, scopeComponentId, ct);
+        var scenario = p.ScenarioId is null
+            ? null
+            : architecture.Scenarios.FirstOrDefault(s => s.Id == p.ScenarioId);
+
+        DiagramSpecGenerator.Result? diagram = null;
+        if (p.Kind == SectionKind.DeepDiveFlow && scenario is not null)
+        {
+            try
+            {
+                var generator = new DiagramSpecGenerator(llm, LoggerFor<DiagramSpecGenerator>());
+                diagram = await generator.GenerateAsync("sequence", architecture, scenario, ct);
+            }
+            catch (GenerationException ex)
+            {
+                logger.LogWarning(ex, "Diagram generation failed for {Slug}; continuing text-only", p.Slug);
+            }
+        }
+
+        var repoEdges = p.Kind == SectionKind.DeepDiveInterfaces
+            ? await LoadRepoEdgesTouchingAsync(p.AnalysisId, chain[0], ct)
+            : [];
+
+        var material = ContextPacker.ForScopeSection(
+            CheckoutPath(p.AnalysisId), map, scope, architecture, p.Kind!, scenario,
+            diagram?.Spec, subSummaries, repoEdges);
+        var sectionGenerator = new SectionGenerator(llm, LoggerFor<SectionGenerator>());
+        var result = await sectionGenerator.GenerateAsync(
+            p.Title!, material, CheckoutPath(p.AnalysisId), map, diagram, ct, PromptLibrary.ScopeSection);
+
+        await experiences.CompleteSectionAsync(
+            p.SectionId.Value, result.SummaryLine, result.EstimatedMinutes, result.Blocks, ct);
+
+        await explosions.IncrementSectionsReadyAsync(p.ExplosionId!.Value, ct);
+        bus.Publish(p.SessionId, SessionEventKinds.SectionReady, new
+        {
+            sectionId = p.SectionId,
+            slug = p.Slug,
+            title = result.Title,
+            ordinal = p.Ordinal,
+            depth = (p.ExplosionDepth ?? 1) + 1,
+            parentSectionId = p.DeepDiveSectionId,
+        });
+
+        await queue.EnqueueAsync(
+            LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts),
+            analysisId: p.AnalysisId, ct: ct);
+        await queue.EnqueueAsync(
+            LlmJobTypes.EmbedSection,
+            JsonSerializer.Serialize(new { sectionId = p.SectionId }, JsonOpts),
+            analysisId: p.AnalysisId, ct: ct);
+    }
+
+    private async Task RunFinalizeScopeAsync(Payload p, CancellationToken ct)
+    {
+        var explosionId = p.ExplosionId!.Value;
+        var unready = await experiences.CountUnreadyChildSectionsAsync(p.DeepDiveSectionId!.Value, ct);
+        var status = unready > 0 ? ExplosionStatus.Partial : ExplosionStatus.Ready;
+        await explosions.SetStatusAsync(explosionId, status, finished: true, ct: ct);
+
+        var row = await explosions.GetAsync(explosionId, ct);
+        bus.Publish(p.SessionId, SessionEventKinds.DeepDiveReady, new
+        {
+            explosionId,
+            componentId = p.ScopeComponentId,
+            sectionId = p.DeepDiveSectionId,
+            ready = row?.SectionsReady ?? 0,
+            total = row?.SectionsTotal ?? 0,
+        });
+        Narrate(p, unready > 0
+            ? $"Deep dive into {p.ScopeComponentName} ready with {unready} section(s) unavailable"
+            : $"Deep dive into {p.ScopeComponentName} is ready");
+    }
+
+    /// <summary>
+    /// Repo-level architecture edges touching the scope's top-level component. The
+    /// arch doc's component names/ids are LLM-canonicalized ("Cs2Gs Pipeline",
+    /// "cs2gs-pipeline") while the scope name comes from ComponentDetector
+    /// ("Cs2Gs.Pipeline"), so match on an alphanumeric-normalized form — a plain
+    /// substring check misses on the dot-vs-space difference and the section then
+    /// has no cross-boundary material. Edges are rendered with display names.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> LoadRepoEdgesTouchingAsync(
+        Guid analysisId, string topLevelName, CancellationToken ct)
+    {
+        var json = await analyses.GetRepoSummaryStructuredAsync(analysisId, ct);
+        if (json is null)
+        {
+            return [];
+        }
+
+        var repoArch = JsonSerializer.Deserialize<ArchitectureDoc>(json, JsonOpts);
+        if (repoArch is null)
+        {
+            return [];
+        }
+
+        var target = Normalize(topLevelName);
+        var nameById = repoArch.Components.ToDictionary(c => c.Id, c => c.Name, StringComparer.OrdinalIgnoreCase);
+        var matching = repoArch.Components
+            .Where(c =>
+            {
+                var n = Normalize(c.Name);
+                var i = Normalize(c.Id);
+                return n.Length > 0 && (n.Contains(target, StringComparison.Ordinal)
+                    || target.Contains(n, StringComparison.Ordinal)
+                    || i.Contains(target, StringComparison.Ordinal)
+                    || target.Contains(i, StringComparison.Ordinal));
+            })
+            .Select(c => c.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (matching.Count == 0)
+        {
+            return [];
+        }
+
+        string Name(string id) => nameById.GetValueOrDefault(id, id);
+        return repoArch.Edges
+            .Where(e => matching.Contains(e.From) || matching.Contains(e.To))
+            .Select(e => matching.Contains(e.From)
+                ? $"- {Name(e.From)} (this scope) → {Name(e.To)}: {e.Label}"
+                : $"- {Name(e.From)} → {Name(e.To)} (this scope): {e.Label}")
+            .ToList();
+    }
+
+    /// <summary>Lowercased, alphanumerics-only — bridges detector names ("A.B") and
+    /// LLM-canonicalized arch names/ids ("A B", "a-b").</summary>
+    private static string Normalize(string s) =>
+        new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
+    private async Task MarkDiveFailedAsync(Payload p, string reason)
+    {
+        if (p.ExplosionId is { } explosionId)
+        {
+            await explosions.SetStatusAsync(explosionId, ExplosionStatus.Failed, reason, finished: true);
+        }
+
+        if (p.DeepDiveSectionId is { } sectionId)
+        {
+            await experiences.SetSectionStatusAsync(sectionId, SectionState.Failed);
+        }
+
+        bus.Publish(p.SessionId, SessionEventKinds.DeepDiveFailed, new
+        {
+            explosionId = p.ExplosionId,
+            componentId = p.ScopeComponentId,
+            sectionId = p.DeepDiveSectionId,
+            reason,
+        });
+        Narrate(p, $"Deep dive into {p.ScopeComponentName} failed");
+    }
+
+    /// <summary>Walks parent_component_id links into [top-level, …, target] names.</summary>
+    private async Task<IReadOnlyList<string>> BuildNameChainAsync(Guid componentId, CancellationToken ct)
+    {
+        var chain = new List<string>();
+        Guid? current = componentId;
+        while (current is { } id)
+        {
+            var row = await analyses.GetComponentAsync(id, ct)
+                ?? throw new InvalidOperationException($"Component row missing: {id}");
+            chain.Insert(0, row.Name);
+            current = row.ParentComponentId;
+        }
+
+        return chain;
     }
 
     private async Task HandleTerminalFailureAsync(QueuedJob job, string reason)
@@ -431,6 +854,27 @@ public sealed class LlmPipelineWorker(
                 case LlmJobTypes.SummarizeComponent:
                     // Gap tolerated: the synthesize join proceeds with what succeeded.
                     Narrate(p, $"Couldn't summarize component {p.ComponentName}; continuing without it");
+                    break;
+                case LlmJobTypes.SynthesizeScope:
+                    // A dead scope synthesis kills the dive — never the session.
+                    await MarkDiveFailedAsync(p, reason);
+                    break;
+                case LlmJobTypes.FinalizeScope:
+                    // Children may have landed; report the dive partial with gap counts.
+                    if (p.ExplosionId is { } feExplosionId)
+                    {
+                        await explosions.SetStatusAsync(feExplosionId, ExplosionStatus.Partial, reason, finished: true);
+                        var feRow = await explosions.GetAsync(feExplosionId);
+                        bus.Publish(p.SessionId, SessionEventKinds.DeepDiveReady, new
+                        {
+                            explosionId = feExplosionId,
+                            componentId = p.ScopeComponentId,
+                            sectionId = p.DeepDiveSectionId,
+                            ready = feRow?.SectionsReady ?? 0,
+                            total = feRow?.SectionsTotal ?? 0,
+                        });
+                    }
+
                     break;
                 case LlmJobTypes.TutorialSection or LlmJobTypes.StorySection:
                     await experiences.SetSectionStatusAsync(p.SectionId!.Value, SectionState.Failed);
@@ -518,7 +962,7 @@ public sealed class LlmPipelineWorker(
         var (ready, total) = await sessions.IncrementSectionsReadyAsync(p.AnalysisId, ct);
         _ = (ready, total);
         bus.Publish(p.SessionId, SessionEventKinds.SectionReady,
-            new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal });
+            new { sectionId = p.SectionId, slug = p.Slug, title = result.Title, ordinal = p.Ordinal, depth = 0, parentSectionId = (Guid?)null });
 
         await queue.EnqueueAsync(
             LlmJobTypes.QuizGenerate, JsonSerializer.Serialize(p, JsonOpts), analysisId: p.AnalysisId, ct: ct);
@@ -647,7 +1091,18 @@ public sealed class LlmPipelineWorker(
         Guid? AttemptId = null,
         Guid? ThreadId = null,
         Guid? MessageId = null,
-        int? EraIndex = null);
+        int? EraIndex = null,
+        // M10 scope-explosion fields; Owner/Name/GitRef ride through from the analysis
+        // payload so the eager hook can hand them to relaunched explode-scope jobs.
+        Guid? ExplosionId = null,
+        Guid? ScopeComponentId = null,
+        string? ScopeComponentName = null,
+        Guid? DeepDiveSectionId = null,
+        int? ExplosionDepth = null,
+        int? Priority = null,
+        string? Owner = null,
+        string? Name = null,
+        string? GitRef = null);
 
     private static string Slugify(string input) =>
         new(input.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());

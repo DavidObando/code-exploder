@@ -49,7 +49,21 @@ public sealed record SectionTocEntry(
     string Status,
     string MyState,
     bool HasQuiz,
-    int? QuizBestPct);
+    int? QuizBestPct,
+    Guid? ComponentId);
+
+// M10 deep dives: explodable scopes and their explosion state.
+public sealed record ScopeExplosionInfo(
+    Guid Id, string Status, string Trigger, Guid? SectionId, int SectionsReady, int SectionsTotal);
+
+public sealed record ScopeInfo(
+    Guid ComponentId, string Name, int FileCount, int Depth, bool Explodable, ScopeExplosionInfo? Explosion);
+
+public sealed record ScopeList(IReadOnlyList<ScopeInfo> Scopes);
+
+public sealed record ExplodeRequest(Guid ComponentId);
+
+public sealed record ExplodeResponse(Guid ExplosionId, Guid? SectionId, string Status);
 
 public sealed record BlockDto(Guid Id, int Ord, string Type, System.Text.Json.JsonElement Data);
 

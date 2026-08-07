@@ -223,6 +223,19 @@ public sealed class JobQueue(NpgsqlDataSource dataSource)
         return expired.Count;
     }
 
+    /// <summary>
+    /// M10: bumps a still-waiting job's priority (eager explosion upgraded to
+    /// on-demand). Returns false once the job started running — too late to matter.
+    /// </summary>
+    public async Task<bool> TrySetPriorityAsync(Guid jobId, int priority, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "update jobs set priority = $2, updated_at = now() where id = $1 and status in ('queued','blocked')");
+        cmd.Parameters.AddWithValue(jobId);
+        cmd.Parameters.AddWithValue(priority);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
     /// <summary>Purges finished jobs older than the window (queue hygiene).</summary>
     public async Task<int> PurgeFinishedAsync(TimeSpan olderThan, CancellationToken ct = default)
     {

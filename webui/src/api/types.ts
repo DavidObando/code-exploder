@@ -93,7 +93,11 @@ export type SectionKind =
   | 'pr-overview'
   | 'pr-walkthrough'
   | 'pr-risk'
-  | 'story';
+  | 'story'
+  | 'deep-dive'
+  | 'deep-dive-tour'
+  | 'deep-dive-flow'
+  | 'deep-dive-interfaces';
 export type SectionStatus = 'pending' | 'generating' | 'ready' | 'failed';
 export type SectionUserState = 'unread' | 'read' | 'skipped' | 'completed';
 
@@ -112,6 +116,43 @@ export interface SectionTocEntry {
   hasQuiz: boolean;
   /** Best score across retakes; null when never attempted. */
   quizBestPct: number | null;
+  /** The scope this section belongs to (deep-dive sections only, M10). */
+  componentId: string | null;
+}
+
+// --- Deep dives (M10) ---
+
+export type ExplosionStatus = 'queued' | 'running' | 'ready' | 'partial' | 'failed';
+
+export interface ScopeExplosionInfo {
+  id: string;
+  status: ExplosionStatus;
+  trigger: 'eager' | 'on_demand';
+  /** The deep-dive parent section, once created. */
+  sectionId: string | null;
+  sectionsReady: number;
+  sectionsTotal: number;
+}
+
+export interface ScopeInfo {
+  componentId: string;
+  name: string;
+  fileCount: number;
+  depth: number;
+  /** False at max depth or below the minimum useful size. */
+  explodable: boolean;
+  /** Null when this scope has never been exploded. */
+  explosion: ScopeExplosionInfo | null;
+}
+
+export interface ScopeList {
+  scopes: ScopeInfo[];
+}
+
+export interface ExplodeResponse {
+  explosionId: string;
+  sectionId: string | null;
+  status: ExplosionStatus;
 }
 
 export interface ExperienceToc {

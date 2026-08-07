@@ -61,6 +61,134 @@ public sealed class ComponentDetector
             .ToList();
     }
 
+    /// <summary>
+    /// M10: detects sub-components within one component's file subtree, for scope
+    /// explosion. Strips the scope's common directory prefix, re-runs detection with
+    /// relaxed knobs on the synthetic sub-map, and re-bases the results. Returns an
+    /// empty list for an atomic scope (no meaningful internal structure).
+    /// </summary>
+    public static IReadOnlyList<Component> DetectWithin(RepoMap map, Component parent, int maxSubComponents = 8)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        ArgumentNullException.ThrowIfNull(parent);
+
+        var scopePaths = new HashSet<string>(parent.FilePaths, StringComparer.Ordinal);
+        var files = map.Files.Where(f => !f.Excluded && scopePaths.Contains(f.Path)).ToList();
+        if (files.Count == 0)
+        {
+            return [];
+        }
+
+        // The common prefix (not RootPaths) guarantees strip/re-prefix is a bijection
+        // even when the component was assembled from several roots.
+        var prefix = CommonDirectoryPrefix(files.Select(f => f.Path));
+        var subFiles = files
+            .Select(f => f with { Path = f.Path[prefix.Length..] })
+            .ToList();
+        var subMap = new RepoMap(subFiles, [], [], [], [], [], 0, 0, 0);
+
+        var detector = new ComponentDetector(
+            minComponentFiles: 2, splitThreshold: 40, maxComponents: maxSubComponents);
+        var detected = detector.Detect(subMap);
+        if (detected.Count <= 1)
+        {
+            return []; // atomic scope: one bucket == the whole component
+        }
+
+        var result = new List<Component>(detected.Count);
+        var usedNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var child in detected)
+        {
+            var suffix = string.Equals(child.Name, RootName, StringComparison.Ordinal)
+                ? RootName
+                : child.Name;
+            var name = parent.Name + "/" + suffix;
+            var n = 2;
+            while (!usedNames.Add(name))
+            {
+                name = parent.Name + "/" + suffix + "#" + n.ToString(CultureInfo.InvariantCulture);
+                n++;
+            }
+
+            result.Add(new Component(
+                name,
+                child.RootPaths.Select(r => Rebase(prefix, r)).ToList(),
+                child.FilePaths.Select(p => prefix + p).ToList(),
+                child.TopFiles.Select(p => prefix + p).ToList()));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// M10: recovers a (possibly nested) component's file membership from its name
+    /// chain — [top-level, child, grandchild…] — by re-running detection level by
+    /// level. Deterministic inputs make this reproducible across processes; the
+    /// components table stores only roots/counts, never file lists.
+    /// </summary>
+    public static Component? ResolveChain(RepoMap map, IReadOnlyList<string> nameChain, int maxSubComponents = 8)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        if (nameChain.Count == 0)
+        {
+            return null;
+        }
+
+        var current = new ComponentDetector().Detect(map)
+            .FirstOrDefault(c => string.Equals(c.Name, nameChain[0], StringComparison.Ordinal));
+        foreach (var name in nameChain.Skip(1))
+        {
+            if (current is null)
+            {
+                return null;
+            }
+
+            current = DetectWithin(map, current, maxSubComponents)
+                .FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal));
+        }
+
+        return current;
+    }
+
+    /// <summary>Longest shared directory prefix, ending in '/' (or "" for none).</summary>
+    internal static string CommonDirectoryPrefix(IEnumerable<string> paths)
+    {
+        string? prefix = null;
+        foreach (var path in paths)
+        {
+            var dirEnd = path.LastIndexOf('/');
+            var dir = dirEnd < 0 ? "" : path[..(dirEnd + 1)];
+            if (prefix is null)
+            {
+                prefix = dir;
+                continue;
+            }
+
+            while (prefix.Length > 0 && !dir.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                var slash = prefix.LastIndexOf('/', prefix.Length - 2);
+                prefix = slash < 0 ? "" : prefix[..(slash + 1)];
+            }
+
+            if (prefix.Length == 0)
+            {
+                return "";
+            }
+        }
+
+        return prefix ?? "";
+    }
+
+    private static string Rebase(string prefix, string relativeRoot)
+    {
+        if (relativeRoot.Length == 0)
+        {
+            return prefix.Length == 0 ? "" : prefix[..^1];
+        }
+
+        return prefix + relativeRoot;
+    }
+
     private static List<Comp> AssignFiles(List<RepoFile> files)
     {
         var candidateDirs = FindCandidateDirectories(files);

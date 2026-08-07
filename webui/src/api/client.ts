@@ -4,9 +4,11 @@ import type {
   ChunkPeek,
   CreateSessionRequest,
   ExperienceToc,
+  ExplodeResponse,
   Health,
   KbStatus,
   Me,
+  ScopeList,
   QaMessage,
   QaThread,
   Quiz,
@@ -119,4 +121,24 @@ export const api = {
    */
   startStory: (sessionId: string) =>
     request<void>(`/api/sessions/${encodeURIComponent(sessionId)}/story`, { method: 'POST' }),
+  /** Explodable scopes at one level; omit parentComponentId for top level. */
+  getScopes: (sessionId: string, parentComponentId?: string) =>
+    request<ScopeList>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/scopes` +
+        (parentComponentId ? `?parentComponentId=${encodeURIComponent(parentComponentId)}` : ''),
+    ),
+  /**
+   * Starts a deep dive into a scope. 202 with the new explosion; 200 when one
+   * already exists (idempotent); 400 not explodable; 409 another dive in flight.
+   */
+  explodeScope: (sessionId: string, componentId: string) =>
+    request<ExplodeResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/explode`, {
+      method: 'POST',
+      body: JSON.stringify({ componentId }),
+    }),
+  /** Relaunches a FAILED deep dive. 409 (ApiError) when it isn't failed. */
+  retryExplosion: (explosionId: string) =>
+    request<ExplodeResponse>(`/api/explosions/${encodeURIComponent(explosionId)}/retry`, {
+      method: 'POST',
+    }),
 };

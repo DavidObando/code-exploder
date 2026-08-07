@@ -66,6 +66,27 @@ public static class SectionKind
     public const string Scenario = "scenario";
     public const string Build = "build";
     public const string Story = "story";
+    public const string DeepDive = "deep-dive";
+    public const string DeepDiveTour = "deep-dive-tour";
+    public const string DeepDiveFlow = "deep-dive-flow";
+    public const string DeepDiveInterfaces = "deep-dive-interfaces";
+}
+
+/// <summary>Status machine of an explosions row (M10). 'partial' means the join
+/// completed with at least one failed child section.</summary>
+public static class ExplosionStatus
+{
+    public const string Queued = "queued";
+    public const string Running = "running";
+    public const string Ready = "ready";
+    public const string Partial = "partial";
+    public const string Failed = "failed";
+}
+
+public static class ExplosionTrigger
+{
+    public const string Eager = "eager";
+    public const string OnDemand = "on_demand";
 }
 
 public static class SectionState

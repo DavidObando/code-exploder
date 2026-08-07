@@ -1,7 +1,9 @@
 import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ExperienceToc } from '../../api/types';
+import { useTutorial } from '../../store/tutorial';
 import { useSectionProgress } from './useSectionProgress';
+import { buildTocTree, flattenVisible } from './tocTree';
 import ui from '../../components/ui.module.css';
 import styles from './tutorial.module.css';
 
@@ -28,8 +30,12 @@ export function PacingBar({
 }) {
   const navigate = useNavigate();
   const progress = useSectionProgress(sessionId);
+  const collapsedOverride = useTutorial((s) => s.collapsedOverride);
 
-  const ordered = [...toc.sections].sort((a, b) => a.ord - b.ord);
+  // Walk exactly what the nav shows: depth-first, collapsed subtrees skipped
+  // (collapse is a legible "not now"). The nav's auto-expand invariant keeps
+  // the current section always visible, so findIndex never loses its place.
+  const ordered = flattenVisible(buildTocTree(toc.sections), collapsedOverride);
   const index = ordered.findIndex((s) => s.slug === currentSlug);
   const current = index >= 0 ? ordered[index] : null;
   const prevEntry = ordered.slice(0, Math.max(index, 0)).reverse().find((s) => s.status === 'ready') ?? null;

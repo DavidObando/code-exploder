@@ -1,13 +1,25 @@
 import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { ExperienceToc, SectionTocEntry, SessionSummary } from '../../api/types';
 import { useUi } from '../../store/ui';
+import { useTutorial } from '../../store/tutorial';
+import { useExplodeScope } from './useExplodeScope';
+import {
+  ancestorIds,
+  buildTocTree,
+  hasUnreadDescendant,
+  isCollapsed,
+  partitionMainTour,
+  type TocNode,
+} from './tocTree';
 import styles from './tutorial.module.css';
 
 // Glyphs per docs/05-ux.md: ✓ completed · ● current · ○ unread/read · ─ skipped
 // (dimmed) · ◐ generating (pulsing, disabled) · ✗ failed. Pending shares ◐
-// without the pulse.
+// without the pulse. The small accent dot marks ready-but-never-viewed sections
+// (rolling up onto collapsed parents), and winks out on scroll-to-end.
 
 export function sectionGlyph(entry: SectionTocEntry, isCurrent: boolean): string {
   if (entry.status === 'failed') return '✗';
@@ -30,15 +42,16 @@ function Row({
   entry,
   sessionId,
   isCurrent,
+  showDot,
 }: {
   entry: SectionTocEntry;
   sessionId: string;
   isCurrent: boolean;
+  showDot: boolean;
 }) {
   const glyph = sectionGlyph(entry, isCurrent);
   const disabled = entry.status !== 'ready';
   const pulsing = entry.status === 'generating';
-  const indent = { paddingLeft: `calc(var(--space-2) + ${entry.depth} * var(--space-4))` };
   const quizTooltip =
     entry.hasQuiz && entry.quizBestPct !== null
       ? `Best quiz score: ${Math.round(entry.quizBestPct)}%`
@@ -61,9 +74,12 @@ function Row({
           Q
         </span>
       )}
-      {entry.status === 'ready' && entry.myState === 'unread' && (
-        <span className={styles.tocMinutes}>{entry.estimatedMinutes}m</span>
-      )}
+      <span className={styles.tocRight}>
+        {showDot && <span className={styles.tocNewDot} aria-label="Unread" />}
+        {entry.status === 'ready' && entry.myState === 'unread' && (
+          <span className={styles.tocMinutes}>{entry.estimatedMinutes}m</span>
+        )}
+      </span>
     </>
   );
 
@@ -71,7 +87,6 @@ function Row({
     return (
       <span
         className={styles.tocRowDisabled}
-        style={indent}
         aria-disabled="true"
         title={entry.status === 'failed' ? 'This section failed to generate' : 'Still generating'}
       >
@@ -90,12 +105,91 @@ function Row({
             ? styles.tocRowSkipped
             : styles.tocRow
       }
-      style={indent}
       aria-current={isCurrent ? 'page' : undefined}
       title={quizTooltip}
     >
       {inner}
     </Link>
+  );
+}
+
+/** Inline retry on a failed deep-dive row (mirrors the failed-session pattern). */
+function DiveRetryButton({ entry, sessionId }: { entry: SectionTocEntry; sessionId: string }) {
+  const explode = useExplodeScope(sessionId);
+  if (!entry.componentId) return null;
+  return (
+    <button
+      type="button"
+      className={styles.tocRetry}
+      onClick={() => explode.mutate(entry.componentId!)}
+      disabled={explode.isPending}
+      aria-label={`Retry ${entry.title}`}
+      title="Retry this deep dive"
+    >
+      ↻
+    </button>
+  );
+}
+
+function TreeRow({
+  node,
+  sessionId,
+  currentSlug,
+}: {
+  node: TocNode;
+  sessionId: string;
+  currentSlug: string | null;
+}) {
+  const collapsedOverride = useTutorial((s) => s.collapsedOverride);
+  const setCollapsed = useTutorial((s) => s.setCollapsed);
+  const collapsed = isCollapsed(node.entry, collapsedOverride);
+  const hasChildren = node.children.length > 0;
+  const entry = node.entry;
+  const ownDot = entry.status === 'ready' && entry.myState === 'unread';
+  const rollupDot = hasChildren && collapsed && hasUnreadDescendant(node);
+
+  return (
+    <div>
+      <div
+        className={styles.tocRowWrap}
+        style={{ paddingLeft: `calc(${entry.depth} * var(--space-4))` }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            className={collapsed ? styles.tocDisclosureCollapsed : styles.tocDisclosure}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${entry.title}`}
+            onClick={() => setCollapsed(entry.id, !collapsed)}
+          >
+            ▾
+          </button>
+        ) : (
+          <span className={styles.tocDisclosureSpacer} aria-hidden="true" />
+        )}
+        <Row
+          entry={entry}
+          sessionId={sessionId}
+          isCurrent={entry.slug === currentSlug}
+          showDot={ownDot || rollupDot}
+        />
+        {entry.kind === 'deep-dive' && entry.status === 'failed' && (
+          <DiveRetryButton entry={entry} sessionId={sessionId} />
+        )}
+      </div>
+      {hasChildren && !collapsed && (
+        <div role="group">
+          {node.children.map((child) => (
+            <TreeRow
+              key={child.entry.id}
+              node={child}
+              sessionId={sessionId}
+              currentSlug={currentSlug}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -148,7 +242,7 @@ function StoryFooter({ session, hasStory }: { session: SessionSummary; hasStory:
   );
 }
 
-/** Tutorial TOC: overall completion + estimated minutes left + per-section rows. */
+/** Tutorial TOC: overall completion + estimated minutes left + the section tree. */
 export function SectionNav({
   toc,
   session,
@@ -159,14 +253,37 @@ export function SectionNav({
   currentSlug: string | null;
 }) {
   const sessionId = session.id;
-  const sections = [...toc.sections].sort((a, b) => a.ord - b.ord);
-  const total = sections.length;
-  const completed = sections.filter((s) => s.myState === 'completed').length;
+  const expandAll = useTutorial((s) => s.expandAll);
+  const roots = buildTocTree(toc.sections);
+
+  // Main-tour metrics stay stable when dives land; dives get their own line.
+  const { mainTour, deepDive } = partitionMainTour(toc.sections);
+  const total = mainTour.length;
+  const completed = mainTour.filter((s) => s.myState === 'completed').length;
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const minutesLeft = sections
+  const minutesLeft = mainTour
     .filter((s) => s.status === 'ready' && s.myState === 'unread')
     .reduce((sum, s) => sum + s.estimatedMinutes, 0);
-  const hasStory = sections.some((s) => s.kind === 'story');
+  const diveCompleted = deepDive.filter((s) => s.myState === 'completed').length;
+  const diveMinutes = deepDive
+    .filter((s) => s.status === 'ready' && s.myState === 'unread')
+    .reduce((sum, s) => sum + s.estimatedMinutes, 0);
+  const hasStory = toc.sections.some((s) => s.kind === 'story');
+
+  // Invariant: the current section's branch is always expanded — this single
+  // effect covers deep links, reloads, and j/k walking into a collapsed branch.
+  const hasCurrent = currentSlug !== null && toc.sections.some((s) => s.slug === currentSlug);
+  useEffect(() => {
+    if (!currentSlug || !hasCurrent) return;
+    const sections = toc.sections;
+    const current = sections.find((s) => s.slug === currentSlug);
+    if (!current) return;
+    const ids = ancestorIds(sections, current.id);
+    if (current.kind === 'deep-dive') ids.push(current.id);
+    if (ids.length > 0) expandAll(ids);
+    // Keyed on the slug (not the toc object) so user collapses aren't fought.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSlug, hasCurrent, expandAll]);
 
   return (
     <nav className={styles.toc} aria-label="Tutorial contents">
@@ -181,16 +298,22 @@ export function SectionNav({
           {completed}/{total} completed
           {minutesLeft > 0 && ` · ~${minutesLeft} min left`}
         </div>
+        {deepDive.length > 0 && (
+          <div className={styles.tocMeta}>
+            Deep dives: {diveCompleted}/{deepDive.length}
+            {diveMinutes > 0 && ` · ~${diveMinutes} min`}
+          </div>
+        )}
         <Link to={`/sessions/${sessionId}/progress`} className={styles.tocVitalsLink}>
           Repository vitals ↗
         </Link>
       </div>
-      {sections.map((entry) => (
-        <Row
-          key={entry.id}
-          entry={entry}
+      {roots.map((node) => (
+        <TreeRow
+          key={node.entry.id}
+          node={node}
           sessionId={sessionId}
-          isCurrent={entry.slug === currentSlug}
+          currentSlug={currentSlug}
         />
       ))}
       <StoryFooter session={session} hasStory={hasStory} />

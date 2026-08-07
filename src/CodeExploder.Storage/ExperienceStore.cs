@@ -6,7 +6,7 @@ namespace CodeExploder.Storage;
 public sealed record SectionRow(
     Guid Id, string Slug, string Kind, string Title, string Summary,
     int Ord, int Depth, Guid? ParentSectionId, int EstimatedMinutes, string Status, string MyState,
-    bool HasQuiz, int? QuizBestPct);
+    bool HasQuiz, int? QuizBestPct, Guid? ComponentId);
 
 public sealed record ExperienceRow(
     Guid Id, int Version, string CommitSha, string Model, DateTimeOffset GeneratedAt);
@@ -39,15 +39,23 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         return id;
     }
 
+    public Task<Guid> CreateSectionAsync(
+        Guid experienceId, int ord, string slug, string kind, string title, string summary,
+        CancellationToken ct = default) =>
+        CreateSectionAsync(experienceId, ord, slug, kind, title, summary,
+            depth: 0, parentSectionId: null, componentId: null, ct);
+
+    /// <summary>M10 overload: creates a nested section (deep-dive subtree member).</summary>
     public async Task<Guid> CreateSectionAsync(
         Guid experienceId, int ord, string slug, string kind, string title, string summary,
-        CancellationToken ct = default)
+        int depth, Guid? parentSectionId, Guid? componentId, CancellationToken ct = default)
     {
         var id = Guid.NewGuid();
         await using var cmd = dataSource.CreateCommand(
             """
-            insert into sections (id, experience_id, ord, slug, kind, title, summary)
-            values ($1, $2, $3, $4, $5, $6, $7)
+            insert into sections (id, experience_id, ord, slug, kind, title, summary,
+                                  depth, parent_section_id, component_id)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """);
         cmd.Parameters.AddWithValue(id);
         cmd.Parameters.AddWithValue(experienceId);
@@ -56,6 +64,9 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         cmd.Parameters.AddWithValue(kind);
         cmd.Parameters.AddWithValue(title);
         cmd.Parameters.AddWithValue(summary);
+        cmd.Parameters.AddWithValue(depth);
+        cmd.Parameters.AddWithValue((object?)parentSectionId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue((object?)componentId ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
         return id;
     }
@@ -138,7 +149,7 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
                    sec.parent_section_id, sec.estimated_minutes, sec.status,
                    coalesce(sp.state, 'unread'),
                    exists(select 1 from quizzes q where q.section_id = sec.id),
-                   sp.quiz_best_pct
+                   sp.quiz_best_pct, sec.component_id
             from sections sec
             left join section_progress sp on sp.section_id = sec.id and sp.user_id = $2
             where sec.experience_id = $1
@@ -156,7 +167,8 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
                 reader.IsDBNull(7) ? null : reader.GetGuid(7),
                 reader.GetInt32(8), reader.GetString(9), reader.GetString(10),
                 reader.GetBoolean(11),
-                reader.IsDBNull(12) ? null : reader.GetInt32(12)));
+                reader.IsDBNull(12) ? null : reader.GetInt32(12),
+                reader.IsDBNull(13) ? null : reader.GetGuid(13)));
         }
 
         return rows;
@@ -339,5 +351,54 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
             "select count(*) from sections where experience_id = $1 and status <> 'ready'");
         cmd.Parameters.AddWithValue(experienceId);
         return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>M10: lightweight lookup for planning a dive's children off its parent section.</summary>
+    public async Task<(Guid ExperienceId, string Slug, int Depth, Guid? ParentSectionId, int Ord)?> GetSectionMetaAsync(
+        Guid sectionId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select experience_id, slug, depth, parent_section_id, ord from sections where id = $1");
+        cmd.Parameters.AddWithValue(sectionId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            return null;
+        }
+
+        return (reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2),
+            reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetInt32(4));
+    }
+
+    /// <summary>M10: anchor lookup for eager dives (the architecture section's id).</summary>
+    public async Task<Guid?> GetSectionIdBySlugAsync(
+        Guid experienceId, string slug, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select id from sections where experience_id = $1 and slug = $2");
+        cmd.Parameters.AddWithValue(experienceId);
+        cmd.Parameters.AddWithValue(slug);
+        return await cmd.ExecuteScalarAsync(ct) as Guid?;
+    }
+
+    /// <summary>M10: the finalize-scope join check, scoped to one deep dive's CONTENT
+    /// children (a nested dive's own lifecycle must not hold its parent hostage).</summary>
+    public async Task<int> CountUnreadyChildSectionsAsync(Guid parentSectionId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "select count(*) from sections where parent_section_id = $1 and kind <> 'deep-dive' and status <> 'ready'");
+        cmd.Parameters.AddWithValue(parentSectionId);
+        return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>M10 retry hygiene: wipes a deep dive's CONTENT children before re-planning.
+    /// Nested deep-dive sections survive — deleting them would cascade away a whole
+    /// nested subtree (and its explosions row) that isn't being retried.</summary>
+    public async Task DeleteChildSectionsAsync(Guid parentSectionId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            "delete from sections where parent_section_id = $1 and kind <> 'deep-dive'");
+        cmd.Parameters.AddWithValue(parentSectionId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

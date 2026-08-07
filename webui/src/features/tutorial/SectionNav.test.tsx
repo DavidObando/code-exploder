@@ -39,6 +39,7 @@ function entry(overrides: Partial<SectionTocEntry>): SectionTocEntry {
     myState: 'unread',
     hasQuiz: false,
     quizBestPct: null,
+    componentId: null,
     ...overrides,
   };
 }

@@ -113,6 +113,69 @@ public sealed class ArchitectureSynthesizer(ILlmClient llm, ILogger<Architecture
 }
 
 /// <summary>
+/// M10: one scope's material → its internal architecture, in the same ArchitectureDoc
+/// shape as S5 so diagrams and section packs reuse unchanged. Tolerates empty
+/// sub-summaries (atomic scopes) — the files carry the load there.
+/// </summary>
+public sealed class ScopeSynthesizer(ILlmClient llm, ILogger<ScopeSynthesizer> logger)
+{
+    public async Task<ArchitectureDoc> SynthesizeAsync(string material, CancellationToken ct)
+    {
+        var call = new JsonLlmCall(llm, logger);
+        var doc = await call.CallAsync<ArchitectureDoc>(
+            PromptLibrary.Load(PromptLibrary.ScopeArchitecture),
+            material,
+            Validate,
+            maxOutputTokens: 6_000,
+            ct);
+        return Sanitize(doc);
+    }
+
+    private static List<string> Validate(ArchitectureDoc doc)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(doc.OverviewMd))
+        {
+            errors.Add("overviewMd is required");
+        }
+
+        if (doc.Components is not { Count: > 0 })
+        {
+            errors.Add("components must be non-empty");
+            return errors;
+        }
+
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var component in doc.Components)
+        {
+            if (string.IsNullOrWhiteSpace(component.Id) || !ids.Add(component.Id))
+            {
+                errors.Add($"component id missing or duplicate: '{component.Id}'");
+            }
+        }
+
+        return errors;
+    }
+
+    /// <summary>Scope caps: fewer parts, fewer flows than the repo-level doc.</summary>
+    private static ArchitectureDoc Sanitize(ArchitectureDoc doc)
+    {
+        var ids = doc.Components.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var edges = (doc.Edges ?? [])
+            .Where(e => ids.Contains(e.From) && ids.Contains(e.To))
+            .Take(24).ToList();
+        var scenarios = (doc.Scenarios ?? [])
+            .Select(s => s with
+            {
+                Steps = s.Steps.Where(st => ids.Contains(st.From) && ids.Contains(st.To)).ToList(),
+            })
+            .Where(s => s.Steps.Count >= 2)
+            .Take(3).ToList();
+        return doc with { Components = doc.Components.Take(8).ToList(), Edges = edges, Scenarios = scenarios };
+    }
+}
+
+/// <summary>
 /// S6a: architecture (or one scenario) → DiagramSpec, validated through the
 /// deterministic renderer — the LLM never writes Mermaid.
 /// </summary>

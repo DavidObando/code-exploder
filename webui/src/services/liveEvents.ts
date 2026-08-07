@@ -3,8 +3,12 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { useUi } from '../store/ui';
 import { useChat } from '../store/chat';
+import { useTutorial } from '../store/tutorial';
 import type {
   AnalysisFailedData,
+  DeepDiveFailedData,
+  DeepDivePlannedData,
+  DeepDiveReadyData,
   QaMessageCompletedData,
   QaTokenData,
   QuizGradedData,
@@ -159,6 +163,9 @@ class LiveEvents {
     for (const sessionId of this.subscribedSessions) {
       await conn.invoke('SubscribeSession', sessionId).catch(() => {});
       await this.catchUp(sessionId);
+      // Catch-up is best effort; a missed SectionReady mid-explosion would leave
+      // the TOC stale until an unrelated invalidation. One GET is cheap insurance.
+      this.queryClient?.invalidateQueries({ queryKey: ['experience', sessionId] });
     }
   }
 
@@ -193,9 +200,48 @@ class LiveEvents {
         break;
       case 'SectionReady': {
         const data = evt.data as SectionReadyData;
-        useUi.getState().toast('success', 'Section ready', data.title);
+        // Deep-dive sections (depth > 0) stay quiet — an eager triple-explosion
+        // must not storm a reader with toasts; DeepDiveReady announces the dive.
+        if ((data.depth ?? 0) === 0) {
+          useUi.getState().toast('success', 'Section ready', data.title);
+        }
         qc?.invalidateQueries({ queryKey: ['analysis', evt.sessionId] });
         qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
+        break;
+      }
+      case 'DeepDivePlanned': {
+        const data = evt.data as DeepDivePlannedData;
+        const tutorial = useTutorial.getState();
+        if (tutorial.pendingExplosions[data.componentId]) {
+          // User-initiated in this tab: reveal the incoming ◐ rows right away.
+          tutorial.setCollapsed(data.sectionId, false);
+          if (data.parentSectionId) tutorial.setCollapsed(data.parentSectionId, false);
+        }
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
+        qc?.invalidateQueries({ queryKey: ['scopes', evt.sessionId] });
+        break;
+      }
+      case 'DeepDiveReady': {
+        const data = evt.data as DeepDiveReadyData;
+        const tutorial = useTutorial.getState();
+        if (tutorial.pendingExplosions[data.componentId]) {
+          tutorial.clearExplosionPending(data.componentId);
+          useUi.getState().toast('success', 'Deep dive ready');
+        }
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
+        qc?.invalidateQueries({ queryKey: ['scopes', evt.sessionId] });
+        break;
+      }
+      case 'DeepDiveFailed': {
+        const data = evt.data as DeepDiveFailedData;
+        const tutorial = useTutorial.getState();
+        if (data.componentId && tutorial.pendingExplosions[data.componentId]) {
+          tutorial.clearExplosionPending(data.componentId);
+          useUi.getState().toast('error', 'Deep dive failed', data.reason);
+        }
+        // Eager/other-tab failures fail quietly: ✗ row + retry affordance only.
+        qc?.invalidateQueries({ queryKey: ['experience', evt.sessionId] });
+        qc?.invalidateQueries({ queryKey: ['scopes', evt.sessionId] });
         break;
       }
       case 'AnalysisCompleted':

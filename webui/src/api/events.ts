@@ -30,6 +30,36 @@ export interface SectionReadyData {
   slug: string;
   title: string;
   ordinal: number;
+  /** Absent on pre-M10 payloads; 0 = main-tour section. */
+  depth?: number;
+  parentSectionId?: string | null;
+}
+
+// --- Deep dives (M10) ---
+
+export interface DeepDivePlannedData {
+  explosionId: string;
+  componentId: string;
+  componentName: string;
+  sectionId: string;
+  parentSectionId: string | null;
+  depth: number;
+  trigger: 'eager' | 'on_demand';
+}
+
+export interface DeepDiveReadyData {
+  explosionId: string;
+  componentId: string;
+  sectionId: string;
+  ready: number;
+  total: number;
+}
+
+export interface DeepDiveFailedData {
+  explosionId: string | null;
+  componentId: string | null;
+  sectionId: string | null;
+  reason: string;
 }
 
 export interface AnalysisFailedData {
