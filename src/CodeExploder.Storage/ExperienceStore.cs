@@ -353,6 +353,31 @@ public sealed class ExperienceStore(NpgsqlDataSource dataSource)
         return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
+    /// <summary>All blocks of an experience in one query, for the static export renderer.</summary>
+    public async Task<IReadOnlyList<(Guid SectionId, BlockRow Block)>> GetBlocksForExperienceAsync(
+        Guid experienceId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select b.section_id, b.id, b.ord, b.type, b.data::text
+            from blocks b
+            join sections sec on sec.id = b.section_id
+            where sec.experience_id = $1
+            order by b.section_id, b.ord
+            """);
+        cmd.Parameters.AddWithValue(experienceId);
+        var rows = new List<(Guid, BlockRow)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((
+                reader.GetGuid(0),
+                new BlockRow(reader.GetGuid(1), reader.GetInt32(2), reader.GetString(3), reader.GetString(4))));
+        }
+
+        return rows;
+    }
+
     /// <summary>M10: lightweight lookup for planning a dive's children off its parent section.</summary>
     public async Task<(Guid ExperienceId, string Slug, int Depth, Guid? ParentSectionId, int Ord)?> GetSectionMetaAsync(
         Guid sectionId, CancellationToken ct = default)

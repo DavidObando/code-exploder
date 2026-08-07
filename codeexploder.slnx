@@ -15,6 +15,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CodeExploder.Analysis.Tests/CodeExploder.Analysis.Tests.csproj" />
+    <Project Path="tests/CodeExploder.Gateway.Tests/CodeExploder.Gateway.Tests.csproj" />
     <Project Path="tests/CodeExploder.Llm.Tests/CodeExploder.Llm.Tests.csproj" />
     <Project Path="tests/CodeExploder.Pipeline.Tests/CodeExploder.Pipeline.Tests.csproj" />
     <Project Path="tests/CodeExploder.Storage.Tests/CodeExploder.Storage.Tests.csproj" />
