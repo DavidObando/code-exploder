@@ -3,17 +3,61 @@
 # orchestrator, and the Vite dev server. Ctrl+C stops everything this script
 # started (a Postgres container that was already running is left running).
 #
-# Environment overrides:
+# Environment overrides (or set them in .env.local, which is sourced below):
 #   LLM_BASE_URL   OpenAI-compatible endpoint for generation/embeddings
 #                  (default http://localhost:11434/v1 — point it at your Ollama)
-#   LLM_MODEL      generation model (default qwen3-coder:oc)
+#   LLM_MODEL      generation model (default qwen3-coder:oc; scripts/setup-macos.sh
+#                  writes qwen3-coder:30b into .env.local for local use)
+#   REPO           analyze a PRIVATE repo you can access: owner/name or a github.com
+#                  URL. dev.sh uses your gh credentials so the workers can clone it
+#                  (needs `gh auth login`). Leave unset for public repos.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Local, gitignored dev defaults (written by scripts/setup-macos.sh).
+if [ -f "$ROOT/.env.local" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/.env.local"
+  set +a
+fi
+
 LLM_BASE_URL="${LLM_BASE_URL:-http://localhost:11434/v1}"
 LLM_MODEL="${LLM_MODEL:-qwen3-coder:oc}"
+REPO="${REPO:-}"
 PIDS=()
 STARTED_POSTGRES=0
+
+# Private-repo access (gated on REPO): the app clones repos by HTTPS URL with
+# credential prompts disabled, so a private repo only succeeds when git has a
+# credential helper. Wire gh's helper into the workers' git via GIT_CONFIG_* —
+# process-scoped, so your global ~/.gitconfig is untouched. Both repo and PR
+# analysis of private repos then work with your token.
+if [ -n "$REPO" ]; then
+  slug="$(printf '%s' "$REPO" | sed -E 's#^https?://github.com/##; s#\.git$##; s#/+$##')"
+  if ! printf '%s' "$slug" | grep -qE '^[^/]+/[^/]+$'; then
+    echo "REPO must be owner/name or a github.com URL (got: $REPO)" >&2
+    exit 1
+  fi
+  echo "==> Private repo access for $slug"
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "    gh (GitHub CLI) is required for private repos. Install it: brew install gh" >&2
+    exit 1
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "    Not logged in to GitHub. Run:  gh auth login   then re-run." >&2
+    exit 1
+  fi
+  if ! gh repo view "$slug" >/dev/null 2>&1; then
+    echo "    Your GitHub account can't access $slug (or it doesn't exist)." >&2
+    exit 1
+  fi
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0="credential.helper"
+  export GIT_CONFIG_VALUE_0="!gh auth git-credential"
+  echo "    Access confirmed. Paste this URL in the app: https://github.com/$slug"
+fi
 
 cleanup() {
   echo

@@ -4,7 +4,7 @@ A self-hosted web app that onboards engineers to a codebase — or explains a la
 by generating a tutorial-like, self-paced interactive experience: "a 1:1 session with
 an expert in the codebase."
 
-Paste a public GitHub repo (or PR) URL and Code Exploder analyzes it with locally
+Paste a GitHub repo (or PR) URL and Code Exploder analyzes it with locally
 hosted LLMs, then serves:
 
 - an **intro** to what the code is and what the product does;
@@ -40,6 +40,31 @@ The LLM defaults to `qwen3-coder:oc` via an OpenAI-compatible endpoint
 (`Llm__BaseUrl`, default `http://localhost:11434/v1`); the embedding/generation
 GPU-co-residency budget is documented in [docs/06](docs/06-llm-strategy.md).
 
+### First-time setup (macOS)
+
+One command installs the toolchain, a container runtime for Postgres, and a local
+Ollama serving the models:
+
+```bash
+scripts/setup-macos.sh
+```
+
+It's idempotent (safe to re-run) and installs, via [Homebrew](https://brew.sh):
+.NET 10 SDK, Node, the GitHub CLI, Docker (Colima if you don't already have a
+daemon), and Ollama — then pulls the generation model **`qwen3-coder:30b`** and the
+embedder **`nomic-embed-text`**, and starts Ollama with a large context window.
+
+> **Model note.** Production runs `qwen3-coder:oc`, a Modelfile that only widens the
+> context window of the official `qwen3-coder:30b` for a specific GPU. Locally we use
+> the base `qwen3-coder:30b` and widen its context through Ollama's
+> `OLLAMA_CONTEXT_LENGTH` setting instead (the setup script sets this). The 30B model
+> is comfortable on Apple Silicon with ≥32 GB unified memory; on a smaller Mac re-run
+> with e.g. `OLLAMA_CONTEXT_LENGTH=32768 scripts/setup-macos.sh` (large-repo synthesis
+> quality drops as the window shrinks).
+
+The setup writes `.env.local` (gitignored) with `LLM_MODEL=qwen3-coder:30b`, which
+`dev.sh` picks up — so plain `./dev.sh` uses your local model with no extra flags.
+
 ### Dev quickstart
 
 Start the complete local development stack with:
@@ -49,8 +74,24 @@ Start the complete local development stack with:
 ```
 
 The script starts PostgreSQL, the gateway, both workers, the orchestrator, and the
-Vite development server. Press Ctrl+C to stop everything it started. To run the
-services individually:
+Vite development server, then opens the app at <http://localhost:5173>. Press Ctrl+C
+to stop everything it started.
+
+**Analyzing a private repo.** The app clones repos by URL with credential prompts
+disabled, so private repos need your credentials. Point `dev.sh` at one you can
+access and it wires your `gh` login into the workers' git (process-scoped — your
+global `~/.gitconfig` is untouched), then prints the URL to paste:
+
+```bash
+gh auth login                       # once, if you haven't
+REPO=your-org/your-private-repo ./dev.sh
+# → Paste this URL in the app: https://github.com/your-org/your-private-repo
+```
+
+`REPO` accepts `owner/name` or a full `github.com` URL, and can live in `.env.local`
+instead. Both repo and PR analysis of private repos then work with your token.
+
+To run the services individually:
 
 ```bash
 docker compose -f deploy/compose.yaml up postgres -d   # Postgres 17 + pgvector on :5433
