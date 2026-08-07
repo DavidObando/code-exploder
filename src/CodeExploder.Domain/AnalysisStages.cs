@@ -53,9 +53,19 @@ public static class LlmJobTypes
     public const string EmbedBatch = "embed-batch";
     public const string EmbedSummaries = "embed-summaries";
     public const string EmbedSection = "embed-section";
+    public const string ExplodeScope = "explode-scope";
+    public const string SynthesizeScope = "synthesize-scope";
+    public const string FinalizeScope = "finalize-scope";
 
     /// <summary>Interactive lane priority (docs/02): grading answers is latency-sensitive.</summary>
     public const int InteractivePriority = 100;
+
+    /// <summary>User-requested deep dives outrank fresh-session pipeline work (0) but
+    /// never interactive work; a dive is a handful of bounded LLM calls.</summary>
+    public const int OnDemandExplodePriority = 5;
+
+    /// <summary>Eager (auto) deep dives only run when the lane is otherwise idle.</summary>
+    public const int EagerExplodePriority = -10;
 }
 
 /// <summary>
@@ -74,4 +84,7 @@ public static class SessionEventKinds
     public const string QuizGraded = "QuizGraded";
     public const string QaToken = "QaToken";
     public const string QaMessageCompleted = "QaMessageCompleted";
+    public const string DeepDivePlanned = "DeepDivePlanned";
+    public const string DeepDiveReady = "DeepDiveReady";
+    public const string DeepDiveFailed = "DeepDiveFailed";
 }

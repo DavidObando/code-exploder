@@ -5,7 +5,7 @@ Voice and shape:
 - 300-600 words. Use ## subheadings sparingly. Short paragraphs.
 - When you reference specific code worth showing, insert a citation token on its own line:
   {{cite:exact/path/from/material.ext:START-END}}
-  where START-END is a 5-40 line range. Use 1-4 citations, only for genuinely illuminating code. Paths must appear verbatim in the material; do not fabricate line numbers beyond the shown ranges.
+  where START-END is a TIGHT window (roughly 8-30 lines) around the SPECIFIC declaration you are pointing at — the class, method, or field itself, not the file's license-and-usings header at the top. Use 1-4 citations, only for genuinely illuminating code. Paths must appear verbatim in the material; do not fabricate line numbers beyond the shown ranges.
 - Do NOT write mermaid or code fences for repository code (citations handle code display). Small inline identifiers in backticks are fine.
 - If diagram stage narration is provided in the material, the diagram is shown ABOVE your text — build on it, don't repeat it.
 

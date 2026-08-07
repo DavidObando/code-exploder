@@ -5,14 +5,18 @@ import { api } from '../../api/client';
 import { usePageTitle } from '../../lib/usePageTitle';
 import { QuizCard } from '../quiz/QuizCard';
 import { BlockRenderer } from './blocks/BlockRenderer';
+import { GoDeeperCard } from './GoDeeperCard';
+import { useExplodeScope } from './useExplodeScope';
 import { useSectionProgress } from './useSectionProgress';
 import { useTutorialContext } from './TutorialLayout';
+import { buildTocTree, flattenAll } from './tocTree';
+import ui from '../../components/ui.module.css';
 import styles from './tutorial.module.css';
 
-/** Index route: jump to the first non-completed ready section. */
+/** Index route: jump to the first non-completed ready section, in tree order. */
 export function TutorialIndexRedirect() {
   const { toc, session } = useTutorialContext();
-  const ordered = [...toc.sections].sort((a, b) => a.ord - b.ord);
+  const ordered = flattenAll(buildTocTree(toc.sections));
   const target =
     ordered.find((s) => s.status === 'ready' && s.myState !== 'completed') ??
     ordered.find((s) => s.status === 'ready');
@@ -74,6 +78,9 @@ export function SectionView() {
     return <div className={styles.placeholder}>No such section in this tutorial.</div>;
   }
   if (entry.status === 'failed') {
+    if (entry.kind === 'deep-dive') {
+      return <FailedDivePlaceholder entry={entry} sessionId={session.id} />;
+    }
     return (
       <div className={styles.placeholder}>
         This section failed to generate. The rest of the tutorial is unaffected.
@@ -99,8 +106,9 @@ export function SectionView() {
     repo: session.repoName,
     commitSha: toc.commitSha,
   };
-  const maxOrd = Math.max(...toc.sections.map((s) => s.ord));
-  const isLast = entry.ord === maxOrd;
+  // Tree order, not max ord — after a dive, the highest ord is a nested leaf.
+  const isLast = flattenAll(buildTocTree(toc.sections)).at(-1)?.id === entry.id;
+  const showGoDeeper = entry.kind === 'architecture' || entry.kind === 'deep-dive';
 
   return (
     <article ref={articleRef}>
@@ -122,6 +130,7 @@ export function SectionView() {
           onReread={() => articleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         />
       )}
+      {showGoDeeper && <GoDeeperCard toc={toc} sessionId={session.id} entry={entry} />}
       {isLast && (
         <div className={styles.endCard}>
           <p className={styles.endCardTitle}>You've reached the end</p>
@@ -130,5 +139,31 @@ export function SectionView() {
       )}
       <div ref={sentinelRef} aria-hidden="true" />
     </article>
+  );
+}
+
+/** A failed deep dive gets an inline retry — the session itself is unaffected. */
+function FailedDivePlaceholder({
+  entry,
+  sessionId,
+}: {
+  entry: { title: string; componentId: string | null };
+  sessionId: string;
+}) {
+  const explode = useExplodeScope(sessionId);
+  return (
+    <div className={styles.placeholder}>
+      <p>“{entry.title}” failed to generate. The rest of the tutorial is unaffected.</p>
+      {entry.componentId && (
+        <button
+          type="button"
+          className={ui.buttonPrimary}
+          onClick={() => explode.mutate(entry.componentId!)}
+          disabled={explode.isPending}
+        >
+          ↻ Retry this deep dive
+        </button>
+      )}
+    </div>
   );
 }

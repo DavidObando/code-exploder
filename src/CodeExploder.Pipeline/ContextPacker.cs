@@ -12,6 +12,7 @@ public static class ContextPacker
     public const int SummarizePackChars = 64_000;   // ≈16k tokens
     public const int SynthesizePackChars = 180_000; // ≈45k tokens
     public const int SectionPackChars = 40_000;     // ≈10k tokens
+    public const int ScopeSynthesizePackChars = 120_000; // ≈30k tokens — smaller scope, fuller files
 
     public static string ForComponent(
         string workspaceRoot, RepoMap map, Component component, IReadOnlyList<string> allComponentNames)
@@ -149,6 +150,166 @@ public static class ContextPacker
         var citable = map.Files.Where(f => !f.Excluded)
             .OrderByDescending(f => f.Rank).Take(40)
             .Select(f => $"{f.Path} (lines 1-{CountLines(workspaceRoot, f.Path)})");
+        pack.TryAdd("Files you may cite with {{cite:path:start-end}}", string.Join("\n", citable));
+
+        return pack.ToString();
+    }
+
+    /// <summary>
+    /// M10: material for summarizing one SUB-component during a scope explosion.
+    /// Deeper than ForComponent — the scope is small, so more files ride verbatim and
+    /// the parent's summary provides orientation instead of the README.
+    /// </summary>
+    public static string ForSubComponent(
+        string workspaceRoot,
+        RepoMap map,
+        Component subComponent,
+        IReadOnlyList<string> siblingNames,
+        string parentName,
+        string? parentSummaryProse)
+    {
+        var pack = new PackBuilder(SummarizePackChars);
+        pack.TryAdd("Sub-component", $"{subComponent.Name}\nRoot paths: {string.Join(", ", subComponent.RootPaths)}"
+            + $"\nThis is one part of the larger component '{parentName}'.");
+        pack.TryAdd("Sibling sub-components in this scope", string.Join(", ", siblingNames));
+        if (!string.IsNullOrWhiteSpace(parentSummaryProse))
+        {
+            pack.TryAdd($"Parent component summary: {parentName}", Truncate(parentSummaryProse!, 3_000));
+        }
+
+        var files = map.Files.Where(f => !f.Excluded).ToDictionary(f => f.Path, StringComparer.Ordinal);
+        var ranked = subComponent.FilePaths
+            .Where(files.ContainsKey)
+            .OrderByDescending(p => files[p].Rank)
+            .ToList();
+
+        foreach (var path in ranked.Where(p => files[p].Role.HasFlag(FileRole.Manifest)).Take(2))
+        {
+            pack.TryAdd($"Manifest: {path}", ReadCapped(workspaceRoot, path, 2_000));
+        }
+
+        foreach (var path in ranked.Take(5))
+        {
+            pack.TryAdd($"File: {path}", ReadCapped(workspaceRoot, path, 8_000));
+        }
+
+        foreach (var path in ranked.Skip(5).Take(8))
+        {
+            pack.TryAdd($"File head: {path}", HeadLines(ReadCapped(workspaceRoot, path, 10_000), 100));
+        }
+
+        pack.TryAdd("All files in sub-component", string.Join("\n", subComponent.FilePaths.Take(200)));
+        return pack.ToString();
+    }
+
+    /// <summary>
+    /// M10: material for synthesizing one scope's internal architecture. The scope is
+    /// small, so key files ride verbatim alongside the sub-component summaries — this
+    /// is where the dive earns being deeper than the main tour.
+    /// </summary>
+    public static string ForScopeArchitecture(
+        string workspaceRoot,
+        RepoMap map,
+        Component scope,
+        string? scopeSummaryProse,
+        string? scopeSummaryStructured,
+        IReadOnlyList<(string Component, string ProseMd, string? StructuredJson)> subSummaries)
+    {
+        var pack = new PackBuilder(ScopeSynthesizePackChars);
+        pack.TryAdd("Scope under the microscope",
+            $"{scope.Name}\nRoot paths: {string.Join(", ", scope.RootPaths)}\nFiles: {scope.FilePaths.Count}");
+        pack.TryAdd($"What the wider tour already said about {scope.Name}",
+            scopeSummaryStructured ?? scopeSummaryProse ?? "(no prior summary)");
+
+        foreach (var (component, prose, structured) in subSummaries)
+        {
+            pack.TryAdd($"Sub-component summary: {component}", structured ?? prose);
+        }
+
+        var files = map.Files.Where(f => !f.Excluded).ToDictionary(f => f.Path, StringComparer.Ordinal);
+        var ranked = scope.FilePaths
+            .Where(files.ContainsKey)
+            .OrderByDescending(p => files[p].Rank)
+            .ToList();
+
+        // Atomic scopes have no sub-summaries; the files themselves carry the load.
+        var verbatim = subSummaries.Count > 0 ? 3 : 6;
+        foreach (var path in ranked.Take(verbatim))
+        {
+            pack.TryAdd($"File: {path}", ReadCapped(workspaceRoot, path, 8_000));
+        }
+
+        pack.TryAdd("All files in scope", string.Join("\n", scope.FilePaths.Take(300)));
+        return pack.ToString();
+    }
+
+    /// <summary>M10: material for one deep-dive child section. Citations are restricted
+    /// to the scope's own files so the dive never wanders off-scope.</summary>
+    public static string ForScopeSection(
+        string workspaceRoot,
+        RepoMap map,
+        Component scope,
+        ArchitectureDoc scopedArchitecture,
+        string kind,
+        ArchScenario? scenario,
+        DiagramSpec? diagram,
+        IReadOnlyList<(string Component, string ProseMd, string? StructuredJson)> subSummaries,
+        IReadOnlyList<string> repoEdgesTouchingScope)
+    {
+        var pack = new PackBuilder(SectionPackChars);
+        pack.TryAdd("Scope", $"{scope.Name} — a deep dive into one subsystem. The reader has finished the main tour.");
+        pack.TryAdd("Scope overview", scopedArchitecture.OverviewMd);
+
+        switch (kind)
+        {
+            case SectionKind.DeepDiveTour:
+                pack.TryAdd("Internal parts", string.Join("\n",
+                    scopedArchitecture.Components.Select(c => $"- {c.Name} ({c.Id}): {c.Purpose} — key files: {string.Join(", ", c.KeyFiles.Take(3))}")));
+                pack.TryAdd("Internal relationships", string.Join("\n",
+                    scopedArchitecture.Edges.Select(e => $"- {e.From} → {e.To}: {e.Label}")));
+                foreach (var (component, prose, _) in subSummaries.Take(6))
+                {
+                    pack.TryAdd($"Sub-component: {component}", prose);
+                }
+
+                break;
+
+            case SectionKind.DeepDiveFlow when scenario is not null:
+                pack.TryAdd($"Internal flow: {scenario.Title}", scenario.Description + "\nSteps:\n"
+                    + string.Join("\n", scenario.Steps.Select((s, i) => $"{i + 1}. {s.From} → {s.To}: {s.Action}")));
+                var involved = scenario.Steps.SelectMany(s => new[] { s.From, s.To }).Distinct().ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var (component, prose, _) in subSummaries.Where(s => involved.Contains(s.Component)).Take(4))
+                {
+                    pack.TryAdd($"Sub-component: {component}", prose);
+                }
+
+                break;
+
+            case SectionKind.DeepDiveInterfaces:
+                pack.TryAdd("How the rest of the system touches this scope",
+                    repoEdgesTouchingScope.Count > 0
+                        ? string.Join("\n", repoEdgesTouchingScope)
+                        : "(no recorded edges — infer the boundary from the files)");
+                pack.TryAdd("Internal parts", string.Join("\n",
+                    scopedArchitecture.Components.Select(c => $"- {c.Name}: {c.Purpose}")));
+                break;
+
+            default:
+                break;
+        }
+
+        if (diagram is not null)
+        {
+            pack.TryAdd("Diagram shown above this section (build on it, don't repeat it)",
+                $"{diagram.Title}\n" + string.Join("\n", diagram.Stages.Select(s => $"- {s.Title}: {s.NarrationMd}")));
+        }
+
+        var files = map.Files.Where(f => !f.Excluded).ToDictionary(f => f.Path, StringComparer.Ordinal);
+        var citable = scope.FilePaths
+            .Where(files.ContainsKey)
+            .OrderByDescending(p => files[p].Rank)
+            .Take(40)
+            .Select(p => $"{p} (lines 1-{CountLines(workspaceRoot, p)})");
         pack.TryAdd("Files you may cite with {{cite:path:start-end}}", string.Join("\n", citable));
 
         return pack.ToString();

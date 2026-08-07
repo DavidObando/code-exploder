@@ -3,6 +3,10 @@ using Npgsql;
 
 namespace CodeExploder.Storage;
 
+public sealed record ComponentRow(
+    Guid Id, Guid AnalysisId, string Name, IReadOnlyList<string> RootPaths, int FileCount,
+    Guid? ParentComponentId, int Depth);
+
 /// <summary>
 /// Raw-SQL store for the analysis-side tables (files, chunks, components, plan).
 /// Bulk paths use binary COPY — a mid-size repo inserts thousands of chunk rows.
@@ -158,11 +162,13 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
+    /// <summary>Top-level components only — sub-components (M10) must never leak into
+    /// the plan fan-out or the repo-level architecture pack.</summary>
     public async Task<IReadOnlyList<(Guid Id, string Name)>> GetComponentsAsync(
         Guid analysisId, CancellationToken ct = default)
     {
         await using var cmd = dataSource.CreateCommand(
-            "select id, name from components where analysis_id = $1 order by plan_rank");
+            "select id, name from components where analysis_id = $1 and parent_component_id is null order by plan_rank");
         cmd.Parameters.AddWithValue(analysisId);
         var rows = new List<(Guid, string)>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -172,6 +178,104 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         }
 
         return rows;
+    }
+
+    public async Task<ComponentRow?> GetComponentAsync(Guid componentId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select id, analysis_id, name, root_paths, file_count, parent_component_id, depth
+            from components where id = $1
+            """);
+        cmd.Parameters.AddWithValue(componentId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? ReadComponent(reader) : null;
+    }
+
+    public async Task<IReadOnlyList<ComponentRow>> GetSubComponentsAsync(
+        Guid parentComponentId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select id, analysis_id, name, root_paths, file_count, parent_component_id, depth
+            from components where parent_component_id = $1 order by plan_rank
+            """);
+        cmd.Parameters.AddWithValue(parentComponentId);
+        var rows = new List<ComponentRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(ReadComponent(reader));
+        }
+
+        return rows;
+    }
+
+    /// <summary>Top-level components with size info, for the explodable-scopes endpoint.</summary>
+    public async Task<IReadOnlyList<ComponentRow>> GetTopLevelComponentsAsync(
+        Guid analysisId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select id, analysis_id, name, root_paths, file_count, parent_component_id, depth
+            from components where analysis_id = $1 and parent_component_id is null order by plan_rank
+            """);
+        cmd.Parameters.AddWithValue(analysisId);
+        var rows = new List<ComponentRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(ReadComponent(reader));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// M10: idempotently replaces the sub-components of one parent. Unlike
+    /// InsertComponentsAsync there is no analysis-wide delete — only this parent's
+    /// previous children go (their own explosions cascade away, which is correct on a
+    /// scope re-explode).
+    /// </summary>
+    public async Task<IReadOnlyList<(Guid Id, string Name)>> InsertSubComponentsAsync(
+        Guid analysisId, Guid parentComponentId, int depth, IReadOnlyList<Component> components,
+        CancellationToken ct = default)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        await using (var clear = new NpgsqlCommand(
+            "delete from components where parent_component_id = $1", conn, tx))
+        {
+            clear.Parameters.AddWithValue(parentComponentId);
+            await clear.ExecuteNonQueryAsync(ct);
+        }
+
+        var ids = new List<(Guid, string)>(components.Count);
+        var rank = 0;
+        foreach (var component in components)
+        {
+            var id = Guid.NewGuid();
+            await using var cmd = new NpgsqlCommand(
+                """
+                insert into components (id, analysis_id, name, root_paths, file_count, plan_rank,
+                                        parent_component_id, depth)
+                values ($1, $2, $3, $4, $5, $6, $7, $8)
+                """, conn, tx);
+            cmd.Parameters.AddWithValue(id);
+            cmd.Parameters.AddWithValue(analysisId);
+            cmd.Parameters.AddWithValue(component.Name);
+            cmd.Parameters.AddWithValue(component.RootPaths.ToArray());
+            cmd.Parameters.AddWithValue(component.FilePaths.Count);
+            cmd.Parameters.AddWithValue(rank++);
+            cmd.Parameters.AddWithValue(parentComponentId);
+            cmd.Parameters.AddWithValue(depth);
+            await cmd.ExecuteNonQueryAsync(ct);
+            ids.Add((id, component.Name));
+        }
+
+        await tx.CommitAsync(ct);
+        return ids;
     }
 
     public async Task InsertSummaryAsync(
@@ -194,7 +298,9 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    /// <summary>Component summaries as (componentName, proseMd, structuredJson) for the S5 pack.</summary>
+    /// <summary>Top-level component summaries as (componentName, proseMd, structuredJson)
+    /// for the S5 pack. Sub-component summaries (M10) are excluded — they'd silently
+    /// pollute the repo-level architecture pack on a retry after explosions exist.</summary>
     public async Task<IReadOnlyList<(string Component, string ProseMd, string? StructuredJson)>> GetComponentSummariesAsync(
         Guid analysisId, CancellationToken ct = default)
     {
@@ -203,7 +309,7 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
             select c.name, s.prose_md, s.structured::text
             from summaries s
             join components c on c.id = s.component_id
-            where s.analysis_id = $1 and s.scope = 'component'
+            where s.analysis_id = $1 and s.scope = 'component' and c.parent_component_id is null
             order by c.plan_rank
             """);
         cmd.Parameters.AddWithValue(analysisId);
@@ -215,6 +321,66 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         }
 
         return rows;
+    }
+
+    /// <summary>M10: summaries of one scope's sub-components, for the scope-architecture pack.</summary>
+    public async Task<IReadOnlyList<(string Component, string ProseMd, string? StructuredJson)>> GetScopedComponentSummariesAsync(
+        Guid analysisId, Guid parentComponentId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select c.name, s.prose_md, s.structured::text
+            from summaries s
+            join components c on c.id = s.component_id
+            where s.analysis_id = $1 and s.scope = 'component' and c.parent_component_id = $2
+            order by c.plan_rank
+            """);
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(parentComponentId);
+        var rows = new List<(string, string, string?)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>M10: the scoped ArchitectureDoc produced by synthesize-scope for one component.</summary>
+    public async Task<string?> GetScopeSummaryStructuredAsync(
+        Guid analysisId, Guid componentId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select structured::text from summaries
+            where analysis_id = $1 and scope = 'scope' and component_id = $2
+            order by created_at desc limit 1
+            """);
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(componentId);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
+    /// <summary>One component's own ComponentSummaryDoc JSON (criticality + pack orientation).</summary>
+    public async Task<(string ProseMd, string? StructuredJson)?> GetComponentSummaryAsync(
+        Guid analysisId, Guid componentId, CancellationToken ct = default)
+    {
+        await using var cmd = dataSource.CreateCommand(
+            """
+            select prose_md, structured::text from summaries
+            where analysis_id = $1 and scope = 'component' and component_id = $2
+            order by created_at desc limit 1
+            """);
+        cmd.Parameters.AddWithValue(analysisId);
+        cmd.Parameters.AddWithValue(componentId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            return null;
+        }
+
+        return (reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1));
     }
 
     public async Task<string?> GetRepoSummaryStructuredAsync(Guid analysisId, CancellationToken ct = default)
@@ -303,4 +469,13 @@ public sealed class AnalysisStore(NpgsqlDataSource dataSource)
         cmd.Parameters.AddWithValue(analysisId);
         return (int)(long)(await cmd.ExecuteScalarAsync(ct))!;
     }
+
+    private static ComponentRow ReadComponent(NpgsqlDataReader reader) => new(
+        reader.GetGuid(0),
+        reader.GetGuid(1),
+        reader.GetString(2),
+        reader.GetFieldValue<string[]>(3),
+        reader.GetInt32(4),
+        reader.IsDBNull(5) ? null : reader.GetGuid(5),
+        reader.GetInt32(6));
 }

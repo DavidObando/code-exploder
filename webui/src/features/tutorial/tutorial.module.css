@@ -157,6 +157,143 @@ a.tocRow:hover {
   line-height: 12px;
 }
 
+/* --- Deep-dive tree (M10) --- */
+.tocRowWrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.tocRowWrap > a,
+.tocRowWrap > span[aria-disabled] {
+  flex: 1;
+  min-width: 0;
+}
+
+.tocDisclosure {
+  flex: none;
+  width: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: var(--type-caption);
+  transition: transform var(--dur-control) var(--ease), color var(--dur-hover) var(--ease);
+}
+
+.tocDisclosure:hover {
+  color: var(--text-primary);
+}
+
+.tocDisclosureCollapsed {
+  composes: tocDisclosure;
+  transform: rotate(-90deg);
+}
+
+.tocDisclosureSpacer {
+  flex: none;
+  width: 16px;
+}
+
+.tocRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.tocRight .tocMinutes {
+  margin-left: 0;
+}
+
+/* The "never viewed" dot: shows on ready+unread rows and rolls up onto
+   collapsed parents with unread descendants; clears on scroll-to-end. */
+.tocNewDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.tocRetry {
+  flex: none;
+  font: var(--type-micro);
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: var(--radius-chip);
+  padding: 0 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.tocRetry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Go-deeper card (M10) --- */
+.goDeeper {
+  margin-top: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  padding: var(--space-5);
+}
+
+.goDeeperTitle {
+  font: var(--type-body-strong);
+  margin: 0 0 var(--space-1);
+}
+
+.goDeeperHint {
+  font: var(--type-caption);
+  color: var(--text-muted);
+  margin: 0 0 var(--space-3);
+}
+
+.goDeeperRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+}
+
+.goDeeperScope {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goDeeperName {
+  font: var(--type-body);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goDeeperFiles {
+  font: var(--type-micro);
+  color: var(--text-muted);
+}
+
+.goDeeperGeneratingNote {
+  font: var(--type-caption);
+  color: var(--text-muted);
+  animation: tocPulse 1.4s var(--ease) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goDeeperGeneratingNote {
+    animation: none;
+  }
+}
+
 /* Origin-story footer action */
 .storyButton {
   margin-top: auto;

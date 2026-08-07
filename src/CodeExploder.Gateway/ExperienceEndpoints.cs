@@ -42,7 +42,7 @@ public static class ExperienceEndpoints
                     sections.Select(s => new SectionTocEntry(
                         s.Id, s.Slug, s.Kind, s.Title, s.Summary, s.Ord, s.Depth,
                         s.ParentSectionId, s.EstimatedMinutes, s.Status, s.MyState,
-                        s.HasQuiz, s.QuizBestPct)).ToList()));
+                        s.HasQuiz, s.QuizBestPct, s.ComponentId)).ToList()));
             })
             .RequireAuthorization()
             .Produces<ExperienceToc>()

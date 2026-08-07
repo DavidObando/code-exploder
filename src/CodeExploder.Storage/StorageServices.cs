@@ -25,6 +25,10 @@ public static class StorageServices
         services.AddSingleton<SessionStore>();
         services.AddSingleton<AnalysisStore>();
         services.AddSingleton<ExperienceStore>();
+        services.AddSingleton<ExplosionStore>();
+        services.AddSingleton(config.GetSection("Explosions").Get<Domain.ExplosionOptions>()
+            ?? new Domain.ExplosionOptions());
+        services.AddSingleton<ExplosionLauncher>();
         services.AddSingleton<QuizStore>();
         services.AddSingleton<QaStore>();
         services.AddSingleton<Bundles.BundleExporter>();
